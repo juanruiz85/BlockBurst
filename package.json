@@ -1,0 +1,19 @@
+{
+  "name": "blockburst",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shooter de arena con bloques de colores para navegador: 6 mapas, 5 modos y bots con IA.",
+  "keywords": ["juego", "shooter", "webgl", "threejs", "canvas", "voxel"],
+  "license": "MIT",
+  "author": "Juan Ruiz",
+  "scripts": {
+    "check": "node tools/check-syntax.js",
+    "validate": "node tools/validate-maps.js",
+    "simulate": "node tools/simulate.js",
+    "test": "node tools/check-syntax.js && node tools/validate-maps.js && node tools/simulate.js",
+    "serve": "npx --yes serve ."
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

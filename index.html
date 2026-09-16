@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="BLOCKBURST: shooter de arena con bloques de colores, varios mapas y modos de juego." />
+  <meta name="color-scheme" content="dark" />
+  <title>BLOCKBURST - Arena de bloques</title>
+  <link rel="stylesheet" href="styles/ui.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="view" aria-label="Area de juego"></canvas>
+
+    <!-- ================= HUD ================= -->
+    <div id="hud" class="layer" hidden>
+      <div id="minimapWrap" class="panel flat">
+        <canvas id="minimap" width="200" height="200"></canvas>
+        <span id="minimapName" class="mini-label mono">ARENA</span>
+      </div>
+
+      <div id="objective" class="panel flat">
+        <span id="objMode" class="mono tag">MODO</span>
+        <span id="objTimer" class="mono timer">0:00</span>
+        <span id="objScore" class="mono score">0 - 0</span>
+      </div>
+
+      <ul id="killfeed" class="list"></ul>
+
+      <div id="modeHint" class="panel flat hint"></div>
+
+      <div id="vitals">
+        <div class="barRow">
+          <span class="barLabel mono">VIDA <b id="healthNum">100</b></span>
+          <span class="bar"><i id="healthFill" class="fill health"></i></span>
+        </div>
+        <div class="barRow">
+          <span class="barLabel mono">ESCUDO <b id="armorNum">0</b></span>
+          <span class="bar"><i id="armorFill" class="fill armor"></i></span>
+        </div>
+      </div>
+
+      <div id="ammoBox">
+        <span id="weaponName" class="mono wname">PISTOLA</span>
+        <span id="ammoLine"><b id="ammoMag" class="mono magnum">12</b><span id="ammoReserve" class="mono reserve">/ 60</span></span>
+        <div id="weaponSlots"></div>
+      </div>
+
+      <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="hitmarker"></div>
+      <div id="damageVignette"></div>
+      <div id="healVignette"></div>
+
+      <div id="centerMsg"></div>
+      <div id="pickupToast"></div>
+
+      <div id="respawnBox" class="panel">
+        <span class="mono label">REAPARECES EN</span>
+        <span id="respawnTime" class="mono big">3</span>
+        <button id="btnRespawn" class="btn primary" hidden>REAPARECER</button>
+        <span id="respawnHint" class="mono dim">o pulsa ESPACIO</span>
+      </div>
+
+      <div id="scoreboard" class="panel" hidden>
+        <h3 id="sbTitle" class="mono">MARCADOR</h3>
+        <div id="sbBody"></div>
+      </div>
+    </div>
+
+    <!-- ================= MENU ================= -->
+    <div id="menu" class="layer">
+      <div id="menuGrid" aria-hidden="true"></div>
+      <header id="masthead">
+        <div class="brand">
+          <h1 class="logo">BLOCK<span>BURST</span></h1>
+          <p class="tagline">Shooter de arena con bloques de colores: seis mapas, cinco modos y bots con IA.</p>
+        </div>
+        <div class="meta mono">
+          <span id="verTag">v0.1.0</span>
+          <a id="repoLink" href="https://github.com/juanruiz85/BlockBurst" target="_blank" rel="noopener">repositorio</a>
+        </div>
+      </header>
+
+      <nav id="menuTabs" class="tabs"></nav>
+      <main id="menuBody"></main>
+
+      <footer id="menuFooter" class="mono">
+        WASD mover / Raton apuntar / Clic disparar / R recargar / 1-7 armas / Espacio saltar / Shift correr / Ctrl agachar / V camara / Tab marcador / Esc pausa
+      </footer>
+    </div>
+
+    <!-- ================= PAUSA ================= -->
+    <div id="pause" class="layer center" hidden>
+      <div class="panel dialog">
+        <h2>PAUSA</h2>
+        <p class="dim">La partida esta en pausa. El puntero esta libre.</p>
+        <div class="dialogRows">
+          <label class="sliderRow"><span class="mono">SENSIBILIDAD</span><input id="pSens" type="range" min="40" max="300" step="5" /><b id="pSensVal" class="mono">100</b></label>
+          <label class="sliderRow"><span class="mono">VOLUMEN</span><input id="pVol" type="range" min="0" max="100" step="5" /><b id="pVolVal" class="mono">70</b></label>
+        </div>
+        <div class="dialogBtns">
+          <button id="btnResume" class="btn primary">CONTINUAR</button>
+          <button id="btnQuit" class="btn">SALIR AL MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= RESULTADOS ================= -->
+    <div id="results" class="layer center" hidden>
+      <div class="panel dialog wide">
+        <span id="resultsBanner" class="mono banner">FIN DE PARTIDA</span>
+        <h2 id="resultsTitle">Resultado</h2>
+        <p id="resultsSub" class="dim"></p>
+        <div id="resultsTable"></div>
+        <div class="dialogBtns">
+          <button id="btnAgain" class="btn primary">REVANCHA</button>
+          <button id="btnMenu" class="btn">MENU PRINCIPAL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CARGA ================= -->
+    <div id="loading" class="layer center">
+      <div class="loader">
+        <h1 class="logo small">BLOCK<span>BURST</span></h1>
+        <div class="loadTrack"><i id="loadBar"></i></div>
+        <span id="loadText" class="mono dim">Preparando el motor...</span>
+      </div>
+    </div>
+
+    <!-- ================= FATAL ================= -->
+    <div id="fatal" class="layer center" hidden>
+      <div class="panel dialog">
+        <h2>No se pudo iniciar</h2>
+        <p id="fatalText" class="dim"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="src/util.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/avatar.js"></script>
+  <script src="src/weapons.js"></script>
+  <script src="src/maps.js"></script>
+  <script src="src/bots.js"></script>
+  <script src="src/modes.js"></script>
+  <script src="src/hud.js"></script>
+  <script src="src/game.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>

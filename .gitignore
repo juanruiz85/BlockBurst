@@ -1,0 +1,20 @@
+# Dependencias y compilacion
+node_modules/
+dist/
+build/
+
+# Registros y temporales de las herramientas de validacion
+*.log
+*.err
+arquitectura-tmp/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Archivos de entorno
+.env
+.env.*
