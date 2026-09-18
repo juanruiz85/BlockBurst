@@ -1,5 +1,35 @@
 # Historial de cambios
 
+## v0.3.0 - Salas de hasta 10 jugadores
+
+### Salas por codigo (nuevo)
+- Salas de hasta **10 jugadores** con un codigo corto (por ejemplo `K7M2P`). Los invitados
+  entran escribiendo el codigo, sin intercambios manuales ni cuentas.
+- El encuentro entre jugadores usa un **broker MQTT publico** y un cliente propio sin
+  dependencias (`src/mqtt.js`); a partir de ahi el juego va directo entre navegadores.
+- Topologia en estrella con la **autoridad en el anfitrion**: el simula, reparte los bots y
+  decide los impactos. Cada invitado envia su entrada a 30 Hz, predice su movimiento y
+  recibe instantaneas a 20 Hz con interpolacion. Todos se ven entre si.
+- **Vida de la sala**: permanece abierta mientras haya alguien dentro; cuando se vacia,
+  empieza una **cuenta atras de 1 minuto** y se cierra sola si nadie entra. Si el anfitrion
+  sale, la sala termina para todos y los invitados reciben el aviso.
+- **Retransmision TURN publica** de respaldo ademas de STUN, para mejorar la conexion entre
+  redes distintas.
+- El modo manual por codigos se conserva como alternativa sin relay.
+
+### Correcciones
+- Dos fallos que solo aparecian con varios jugadores: los mensajes de juego se enviaban por
+  el canal equivocado (una segunda definicion de las funciones de envio sobrescribia la
+  version con salas) y los jugadores remotos no entraban en la lista de entidades, asi que
+  los invitados no se veian entre si.
+
+### Herramientas
+- `tools/mqtttest.js`: comprueba el broker publico con dos clientes.
+- `tools/roomtest.js`: abre **tres navegadores**, crea una sala, une a dos invitados con el
+  codigo, empieza la partida y verifica el cierre cuando se vacia.
+- `tools/kill-chrome.ps1`: cierra los navegadores de prueba que hayan quedado abiertos.
+- El juego acepta parametros de URL para pruebas (`lowq`, `fps`, `bots`).
+
 ## v0.2.0 - Multijugador y publicacion web
 
 ### Multijugador (nuevo)

@@ -91,9 +91,19 @@ function launch(port, tag) {
   var server = child.spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: 'ignore' });
   var a = launch(9251, 'a'), b = launch(9252, 'b');
   var fail = [];
+  function killTree(pid) {
+    if (!pid) return;
+    try { child.execSync('taskkill /F /T /PID ' + pid, { stdio: 'ignore' }); } catch (e) { }
+  }
+  function killStrays() {
+    try {
+      child.execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + path.join(__dirname, 'kill-chrome.ps1') + '"', { stdio: 'ignore' });
+    } catch (e) { }
+  }
   var cleanup = function () {
-    [a, b].forEach(function (p) { try { p.kill(); } catch (e) { } });
-    try { server.kill(); } catch (e) { }
+    [a, b].forEach(function (p) { killTree(p.pid); });
+    killTree(server.pid);
+    killStrays();
   };
 
   try {

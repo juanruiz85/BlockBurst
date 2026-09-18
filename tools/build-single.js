@@ -15,6 +15,7 @@ function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 function readBin(p) { return fs.readFileSync(path.join(ROOT, p)); }
 
 var html = read('index.html');
+var expectedScripts = (html.match(/<script src="[^"]+"><\/script>/g) || []).length;
 
 /* 1. CSS en linea, con las fuentes convertidas a data URI */
 var css = read(path.join('styles', 'ui.css'));
@@ -44,8 +45,8 @@ var kb = Math.round(fs.statSync(OUT).size / 1024);
 console.log('Archivo unico generado: dist/BlockBurst.html');
 console.log('  scripts en linea: ' + scriptCount + '  fuentes en linea: ' + fontCount + '  tamano: ' + kb + ' KB');
 
-if (scriptCount < 13) {
-  console.log('AVISO: se esperaban 13 scripts; revisa index.html.');
+if (scriptCount !== expectedScripts) {
+  console.log('AVISO: se esperaban ' + expectedScripts + ' scripts y se incrustaron ' + scriptCount + '; revisa index.html.');
   process.exit(1);
 }
 if (/<script src=/.test(html) || /rel="stylesheet"/.test(html)) {

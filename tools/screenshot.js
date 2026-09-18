@@ -97,8 +97,18 @@ Client.prototype.shot = function (file, quality) {
   ], { stdio: 'ignore' });
 
   var cleanup = function () {
-    try { chrome.kill(); } catch (e) { }
-    try { server.kill(); } catch (e) { }
+    function killTree(pid) {
+      if (!pid) return;
+      try { child.execSync('taskkill /F /T /PID ' + pid, { stdio: 'ignore' }); } catch (e) { }
+    }
+    function killStrays() {
+      try {
+        child.execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + path.join(__dirname, 'kill-chrome.ps1') + '"', { stdio: 'ignore' });
+      } catch (e) { }
+    }
+    killTree(chrome.pid);
+    killTree(server.pid);
+    killStrays();
   };
 
   try {

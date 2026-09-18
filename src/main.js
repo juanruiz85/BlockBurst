@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var B = (window.BLITZ = window.BLITZ || {});
-  B.VERSION = "0.2.0";
+  B.VERSION = "0.3.0";
 
   var DIFFS = [
     { id: "facil", label: "Facil" },
@@ -37,8 +37,11 @@
   var game = null;
   var el = {};
   var last = 0;
+  var lastFrameTs = 0;
+  var minFrameMs = 0;
   var started = false;
   var pendingGuestName = "Invitado";
+  var pendingHostName = "Anfitrion";
 
   function $(id) { return document.getElementById(id); }
 
@@ -76,7 +79,7 @@
   function renderTab() {
     renderTabs();
     if (state.tab === "play") el.menuBody.innerHTML = panelPlay();
-    else if (state.tab === "multi") el.menuBody.innerHTML = panelMulti();
+    else if (state.tab === "multi") el.menuBody.innerHTML = panelRoom();
     else if (state.tab === "controls") el.menuBody.innerHTML = panelControls();
     else el.menuBody.innerHTML = panelSettings();
     wire();
@@ -133,7 +136,96 @@
       "</div>";
   }
 
-  function panelMulti() {
+  /* --------------------------- salas (por codigo) --------------------------- */
+  function roomLeft() {
+    var n = 0;
+    var list = B.Net.peers || {};
+    for (var k in list) if (list[k]) n++;
+    return n;
+  }
+
+  function panelRoom() {
+    var mode = B.modeById(state.modeId);
+    var map = B.mapById(state.mapId);
+    var inRoom = !!B.Net.room;
+    var host = B.Net.isHost;
+    var count = inRoom ? B.Net.playerCount() : 0;
+    var peers = B.Net.peerList();
+    var rows = '<li><span>' + B.esc(state.name || "Tu") + (host ? " (anfitrion)" : "") + '</span><b>tu</b></li>';
+    peers.forEach(function (p) {
+      rows += '<li><span>' + B.esc(p.name || "Jugador") + '</span><b>' + (p.connected ? "conectado" : "conectando") + '</b></li>';
+    });
+
+    var stateText = !inRoom ? "Sin sala" : (host ? "Sala abierta como anfitrion" : "Dentro de la sala");
+    var stateKind = !inRoom ? "" : (B.Net.connected ? "ok" : "warn");
+
+    return '<div class="rowsplit"><div>' +
+      '<h3 class="sectionTitle">Sala multijugador (hasta 10 jugadores)</h3>' +
+      '<div class="panel" style="padding:16px;display:grid;gap:14px">' +
+        '<div class="netState ' + stateKind + '" id="roomState"><i></i><span id="roomStateText" class="mono">' + B.esc(stateText) + '</span></div>' +
+
+        '<div id="roomOpenBox" style="display:' + (inRoom && host ? "grid" : "none") + ';gap:10px">' +
+          '<label class="field"><span>Codigo de la sala (pasalo a quien quieras invitar)</span></label>' +
+          '<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">' +
+            '<input id="roomCodeOut" class="netCode" style="min-height:44px;flex:1;min-width:180px" readonly value="' + B.esc(B.Net.room || "") + '">' +
+            '<button id="btnCopyRoom" class="btn">COPIAR</button>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<button id="btnCreateRoom" class="btn primary"' + (inRoom ? " disabled" : "") + '>CREAR SALA</button>' +
+          '<button id="btnCopyInvite" class="btn">COPIAR INVITACION</button>' +
+          '<button id="btnCloseRoom" class="btn"' + (inRoom ? "" : " disabled") + '>CERRAR SALA</button>' +
+        '</div>' +
+
+        '<div style="display:grid;gap:10px">' +
+          '<label class="field"><span>Unirse con un codigo</span></label>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<input id="roomCodeIn" class="netCode" style="min-height:44px;flex:1;min-width:160px" placeholder="Escribe el codigo, por ejemplo K7M2P" maxlength="8">' +
+          '<button id="btnJoinRoom" class="btn primary"' + (inRoom ? " disabled" : "") + '>UNIRSE</button>' +
+        '</div>' +
+
+        '<div style="display:grid;gap:8px">' +
+          '<span class="mono" style="font-size:12px;letter-spacing:0.14em;color:var(--ink-dim)">JUGADORES <b id="roomCount" style="color:var(--ink)">' + count + "/" + B.Net.maxPlayers + '</b></span>' +
+          '<ul class="summaryList" id="roomList">' + rows + '</ul>' +
+          '<p class="dim" id="roomNote" style="font-size:13px;margin:0"></p>' +
+        '</div>' +
+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<button id="btnStartRoom" class="btn primary"' + (inRoom && host ? "" : " disabled") + '>EMPEZAR PARTIDA</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<details class="panel" style="padding:16px;margin-top:16px">' +
+        '<summary style="cursor:pointer;font-family:var(--mono-font);font-size:13px">Modo sin relay: codigos manuales (si el broker publico no esta disponible)</summary>' +
+        '<div style="margin-top:14px">' + panelManual() + '</div>' +
+      '</details>' +
+    '</div><aside class="side">' +
+      '<div class="panel" style="padding:16px">' +
+        '<h3 class="sectionTitle">Partida de la sala</h3>' +
+        '<ul class="summaryList">' +
+          '<li><span>Modo</span><b>' + B.esc(mode.name) + '</b></li>' +
+          '<li><span>Mapa</span><b>' + B.esc(map.name) + '</b></li>' +
+          '<li><span>Bots</span><b>' + state.bots + '</b></li>' +
+          '<li><span>Dificultad</span><b>' + B.esc(labelOf(DIFFS, state.difficulty)) + '</b></li>' +
+        '</ul>' +
+        '<p class="dim" style="font-size:13px;margin:12px 0 0">El anfitrion los cambia en la pestana <b>Jugar</b> antes de empezar.</p>' +
+      '</div>' +
+      '<div class="panel" style="padding:16px">' +
+        '<h3 class="sectionTitle">Como funciona</h3>' +
+        '<ul class="tips">' +
+          '<li><b>Sin servidor del juego:</b> el broker publico solo sirve para que os encontreis; la partida va despues directa entre los navegadores.</li>' +
+          '<li>El <b>anfitrion</b> simula y manda: su navegador es la autoridad y reparte los bots. Los demas envian su entrada y predicen su movimiento.</li>' +
+          '<li>La sala sigue abierta mientras haya alguien dentro. Si se van <b>todos</b>, se cierra sola <b>1 minuto</b> despues (veras la cuenta atras).</li>' +
+          '<li>Si el anfitrion cierra la pestana o sale, la sala termina para todos.</li>' +
+          '<li>Necesita internet. En redes muy restrictivas puede fallar la conexion directa; en ese caso se usa la retransmision publica de respaldo.</li>' +
+        '</ul>' +
+      '</div>' +
+    '</aside></div>';
+  }
+
+  function panelManual() {
     var mode = B.modeById(state.modeId);
     var map = B.mapById(state.mapId);
     return '<div class="rowsplit"><div>' +
@@ -288,6 +380,181 @@
     var bh = $("btnHost"); if (bh) bh.addEventListener("click", netHostCreate);
     var bc = $("btnHostConnect"); if (bc) bc.addEventListener("click", netHostAccept);
     var bj = $("btnJoin"); if (bj) bj.addEventListener("click", netJoin);
+
+    var cr = $("btnCreateRoom"); if (cr) cr.addEventListener("click", function () { openRoom(true); });
+    var jr = $("btnJoinRoom"); if (jr) jr.addEventListener("click", function () { openRoom(false); });
+    var sr = $("btnStartRoom"); if (sr) sr.addEventListener("click", function () { B.Audio.ui(); startRoomMatch(); });
+    var xr = $("btnCloseRoom"); if (xr) xr.addEventListener("click", function () { closeRoom(false); });
+    var cp = $("btnCopyRoom"); if (cp) cp.addEventListener("click", copyRoomCode);
+    var ci = $("btnCopyInvite"); if (ci) ci.addEventListener("click", copyInvite);
+  }
+
+  /* ------------------------------- salas ---------------------------------- */
+  var roomCloseTimer = null;
+  var roomCloseAt = 0;
+
+  function roomState(kind, text) {
+    var s = $("roomState"), t = $("roomStateText");
+    if (s) s.className = "netState" + (kind ? " " + kind : "");
+    if (t) t.textContent = text;
+  }
+
+  function roomLeft() {
+    var n = 0;
+    var list = B.Net.peers || {};
+    for (var k in list) if (list[k]) n++;
+    return n;
+  }
+
+  function refreshRoomUI() {
+    var st = $("roomStateText");
+    if (st) {
+      if (!B.Net.room) st.textContent = "Sin sala";
+      else if (B.Net.isHost) st.textContent = "Sala " + B.Net.room + (B.Net.connected ? " abierta" : " abierta, esperando jugadores");
+      else st.textContent = "Dentro de la sala" + (B.Net.connected ? "" : " (conectando...)");
+    }
+    var cnt = $("roomCount");
+    if (cnt) cnt.textContent = B.Net.playerCount() + "/" + B.Net.maxPlayers;
+    var note = $("roomNote");
+    if (note) {
+      if (roomCloseAt) note.textContent = "La sala se cerrara en " + Math.max(0, Math.ceil((roomCloseAt - Date.now()) / 1000)) + " s si no entra nadie.";
+      else if (B.Net.room && B.Net.isHost) note.textContent = "Comparte el codigo " + B.Net.room + ". La sala se mantiene abierta mientras haya alguien.";
+      else note.textContent = "";
+    }
+    var codeOut = $("roomCodeOut");
+    if (codeOut && B.Net.room) codeOut.value = B.Net.room;
+
+    var inRoomNow = !!B.Net.room;
+    var hostNow = B.Net.isHost;
+    var cr = $("btnCreateRoom"), jr = $("btnJoinRoom"), sr = $("btnStartRoom"), xr = $("btnCloseRoom"), box = $("roomOpenBox");
+    if (cr) cr.disabled = inRoomNow;
+    if (jr) jr.disabled = inRoomNow;
+    if (xr) xr.disabled = !inRoomNow;
+    if (sr) sr.disabled = !(inRoomNow && hostNow);
+    if (box) box.style.display = (inRoomNow && hostNow) ? "grid" : "none";
+  }
+
+  function openRoom(asHost) {
+    B.Audio.ui();
+    var code = "";
+    if (!asHost) {
+      var box = $("roomCodeIn");
+      code = box ? box.value.trim().toUpperCase() : "";
+      if (code.length < 4) { roomState("bad", "Escribe un codigo de sala valido."); return; }
+    }
+    B.Net.off();
+    registerNetHandlers();
+    var created = B.Net.openRoom(code, state.name, asHost, onRoomStatus);
+    roomState("warn", asHost ? ("Creando la sala " + created + "...") : ("Buscando la sala " + created + "..."));
+    refreshRoomUI();
+  }
+
+  function onRoomStatus(kind, arg) {
+    if (kind === "signaling") roomState("warn", "Conectando con el servicio de encuentro...");
+    else if (kind === "room-open") { roomState("ok", "Sala " + B.Net.room + " abierta. Comparte el codigo."); refreshRoomUI(); }
+    else if (kind === "searching") roomState("warn", "Buscando la sala " + B.Net.room + "...");
+    else if (kind === "peer-connected") {
+      if (B.Net.isHost && game.state === "playing") {
+        var name = (B.Net.peers[arg] && B.Net.peers[arg].name) || "Jugador";
+        var rp = game.addRemotePlayer(arg, name);
+        B.Net.sendTo(arg, "seat", { netId: rp.netId, name: state.name });
+        B.Net.sendTo(arg, "go", {
+          modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+          difficulty: state.difficulty, name: state.name, netId: rp.netId, running: true
+        });
+      }
+      refreshRoomUI();
+    } else if (kind === "peer-left") {
+      if (game.netHost) game.removeRemotePlayer(arg);
+      refreshRoomUI();
+      if (B.Net.isHost && !roomLeft()) {
+        roomCloseAt = Date.now() + 60000;
+        scheduleRoomClose();
+      }
+    } else if (kind === "room-closed") {
+      B.Net.leaveRoom();
+      roomState("bad", "El anfitrion cerro la sala.");
+      renderTab();
+    } else if (kind === "room-full") {
+      B.Net.leaveRoom();
+      roomState("bad", "La sala esta completa (10 jugadores).");
+      renderTab();
+    } else if (kind === "mqtt-error" || kind === "mqtt-closed") {
+      if (!B.Net.connected) roomState("bad", "No se pudo usar el servicio de encuentro. Prueba el modo sin relay.");
+    }
+  }
+
+  function scheduleRoomClose() {
+    if (roomCloseTimer) clearInterval(roomCloseTimer);
+    roomCloseTimer = setInterval(function () {
+      if (roomLeft()) {
+        roomCloseAt = 0;
+        clearInterval(roomCloseTimer); roomCloseTimer = null;
+        refreshRoomUI();
+        return;
+      }
+      if (Date.now() >= roomCloseAt) {
+        clearInterval(roomCloseTimer); roomCloseTimer = null;
+        roomCloseAt = 0;
+        closeRoom(true);
+      } else refreshRoomUI();
+    }, 1000);
+  }
+
+  function closeRoom(auto) {
+    B.Audio.ui();
+    B.Net.leaveRoom();
+    if (roomCloseTimer) { clearInterval(roomCloseTimer); roomCloseTimer = null; }
+    roomCloseAt = 0;
+    if (auto) roomState("warn", "La sala se cerro por falta de jugadores. Crea otra cuando quieras.");
+    else roomState("", "Sala cerrada.");
+    renderTab();
+  }
+
+  function startRoomMatch() {
+    if (!B.Net.isHost) return;
+    hideMenu();
+    show("results", false);
+    game.settings.quality = currentQuality();
+    game.applyQuality();
+    game.netHost = true;
+    game.start({
+      modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+      difficulty: state.difficulty, fov: state.fov, name: state.name
+    });
+    B.Net.peerList().forEach(function (p) {
+      if (!p.connected) return;
+      var rp = game.addRemotePlayer(p.id, p.name);
+      B.Net.sendTo(p.id, "seat", { netId: rp.netId, name: state.name });
+      B.Net.sendTo(p.id, "go", {
+        modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+        difficulty: state.difficulty, name: state.name, netId: rp.netId, running: true
+      });
+    });
+    B.Audio.setVolume(state.volume / 100);
+  }
+
+  function copyText(text, okMsg) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { roomState("ok", okMsg); }, function () { roomState("warn", text); });
+        return;
+      }
+    } catch (e) { }
+    roomState("warn", text);
+  }
+
+  function copyRoomCode() {
+    var box = $("roomCodeOut");
+    if (box) { box.select(); }
+    copyText(B.Net.room || "", "Codigo copiado: " + (B.Net.room || ""));
+  }
+
+  function copyInvite() {
+    if (!B.Net.room) { roomState("bad", "Crea una sala primero."); return; }
+    var url = "https://juanruiz85.github.io/BlockBurst/";
+    var msg = "BLOCKBURST - unete a mi sala. Abre " + url + " y en Multijugador escribe el codigo " + B.Net.room;
+    copyText(msg, "Invitacion copiada. Pegala donde quieras.");
   }
 
   /* ----------------------------- multijugador ----------------------------- */
@@ -378,16 +645,22 @@
       modeId: state.modeId, mapId: state.mapId, bots: state.bots,
       difficulty: state.difficulty, fov: state.fov, name: state.name
     });
+    if (cfg.netId) game.player.netId = cfg.netId;
     B.Audio.setVolume(state.volume / 100);
   }
 
   function registerNetHandlers() {
     B.Net.on("hi", function (d) {
       pendingGuestName = (d && d.name) ? d.name : "Invitado";
-      if (game.netHost && !game.remotePlayer) game.addRemotePlayer(pendingGuestName);
     });
-    B.Net.on("in", function (d) {
-      if (game.remotePlayer) B.Net.applyInput(game.remotePlayer, d);
+    B.Net.on("seat", function (d) {
+      if (d && d.netId) state.myNetId = d.netId;
+      if (d && d.name) pendingHostName = d.name;
+    });
+    B.Net.on("in", function (d, t, peer) {
+      if (!game.netHost || !peer) return;
+      var rp = game.remotes[peer.id];
+      if (rp) B.Net.applyInput(rp, d);
     });
     B.Net.on("sn", function (d) {
       if (game.netClient) B.Net.applySnapshot(game, d);
@@ -460,6 +733,7 @@
     game.state = "menu";
     game.netHost = false;
     game.netClient = false;
+    if (B.Net.room) B.Net.leaveRoom();
     B.Net.close();
     game.teardown();
     showMenu();
@@ -518,6 +792,8 @@
   /* -------------------------------- bucle -------------------------------- */
   function frame(ts) {
     requestAnimationFrame(frame);
+    if (minFrameMs && (ts - lastFrameTs) < minFrameMs) return;
+    lastFrameTs = ts;
     var now = ts / 1000;
     var dt = last ? Math.min(0.05, now - last) : 0.016;
     last = now;
@@ -563,11 +839,17 @@
     }
 
     loadSettings();
+    var qp = new URLSearchParams(window.location.search);
+    if (/[?&]lowq=1/.test(window.location.search)) state.quality = "bajo";
+    if (qp.get("bots")) state.bots = Math.max(1, Math.min(16, parseInt(qp.get("bots"), 10) || 8));
     B.Audio.setVolume(state.volume / 100);
     B.Audio.setEnabled(true);
 
     game.onFinish = onFinish;
     registerNetHandlers();
+    setInterval(function () {
+      if (B.Net.room && game.state === "menu" && state.tab === "multi") refreshRoomUI();
+    }, 1000);
 
     B.Input.onKey(function (code) {
       if (code === "Escape" && game.state === "playing") pauseGame();
@@ -609,7 +891,10 @@
     window.BLITZ.debug = { game: game, state: state };
 
     var qs = new URLSearchParams(window.location.search);
-    var auto = qs.get("auto");
+    if (qs.get("fps")) minFrameMs = 1000 / Math.max(1, Math.min(120, parseInt(qs.get("fps"), 10) || 60));
+
+    var qs0 = new URLSearchParams(window.location.search);
+    var auto = qs0.get("auto");
     if (auto && B.modeById(auto)) {
       state.modeId = auto;
       if (qs.get("map") && B.mapById(qs.get("map"))) state.mapId = qs.get("map");

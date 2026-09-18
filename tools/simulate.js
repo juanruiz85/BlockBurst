@@ -295,7 +295,7 @@ function netTest() {
   host.onFinish = function () { };
   host.netHost = true;
   host.start({ modeId: "dm", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Anfitrion" });
-  var rp = host.addRemotePlayer("Invitado");
+  var rp = host.addRemotePlayer("p1", "Invitado");
 
   // Entrada del invitado: avanzar, mirar, correr y disparar
   B.Net.applyInput(rp, [0, 1, 1.2, -0.1, 0, 1, 4, 0, 1, 0]);

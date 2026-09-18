@@ -72,6 +72,8 @@
     this.netRosterTimer = 0;
     this.netInputTimer = 0;
     this.netInputAxis = { x: 0, z: 0 };
+    this.remotes = {};
+    this.nextGuestId = 1;
     this.elapsed = 0;
     this.world = null;
     this.map = null;
@@ -143,6 +145,8 @@
     this.entities = [this.player];
     this.player.netId = this.netClient ? 1 : 0;
     this.nextNetId = 100;
+    this.nextGuestId = 1;
+    this.remotes = {};
     if (this.netClient) {
       // En el invitado los bots y las reglas llegan desde el anfitrion
       this.modeObj = null;
@@ -172,7 +176,7 @@
     this.entities = []; this.effects = []; this.pickups = []; this.projectiles = [];
     this.tracerPool = []; this.tracers = [];
     this.barrels = [];
-    this.netEntities = {}; this.netEvents = []; this.netHud = null;
+    this.netEntities = {}; this.netEvents = []; this.netHud = null; this.remotes = {};
     if (this.playerAvatar && this.playerAvatar.group.parent) this.playerAvatar.group.parent.remove(this.playerAvatar.group);
     this.player = null;
   };
@@ -1402,7 +1406,7 @@
     B.HUD.banner(this.map.name.toUpperCase(), 2.6, "MULTIJUGADOR");
   };
 
-  Game.prototype.buildRemotePlayer = function (name) {
+  Game.prototype.buildRemotePlayer = function (name, peerId) {
     var team = this.mode.teams ? this.player.team : null;
     var av = B.Avatar.build({
       team: team || "blue",
@@ -1411,11 +1415,12 @@
     });
     this.scene.add(av.group);
     var ent = {
-      netRemote: true, isBot: false, isPlayer: false, netId: 1, name: name || "Invitado",
+      netRemote: true, isBot: false, isPlayer: false, peerId: peerId,
+      netId: this.nextGuestId++, name: name || "Jugador",
       team: team, kind: "soldier",
       pos: { x: 0, y: 0.12, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
       radius: 0.42, height: 1.9, eye: 1.62, grounded: true, jumpCooldown: 0,
-      health: 100, maxHealth: 100, armor: 50, alive: true, invuln: 0,
+      health: 100, maxHealth: 100, armor: 50, alive: true, invuln: 1.5,
       moveSpeed: 6.3, runMul: 1.42, crouchMul: 0.5,
       weapon: "pistol", ammo: {}, cooldown: 0, reloading: 0, shots: 0, shotTimer: 0,
       kills: 0, deaths: 0, score: 0, respawnTimer: 0, carrying: null,
@@ -1426,33 +1431,49 @@
     var sp = B.Bots.spawnPointFor(this, ent.team);
     ent.pos.x = sp[0]; ent.pos.z = sp[1]; ent.pos.y = (sp[2] || 0) + 0.08;
     ent.group.position.set(ent.pos.x, ent.pos.y, ent.pos.z);
+    if (peerId) this.remotes[peerId] = ent;
     return ent;
   };
 
-  Game.prototype.addRemotePlayer = function (name) {
-    if (this.remotePlayer) return this.remotePlayer;
-    this.remotePlayer = this.buildRemotePlayer(name);
-    this.entities.push(this.remotePlayer);
-    return this.remotePlayer;
+  Game.prototype.addRemotePlayer = function (peerId, name) {
+    if (peerId && this.remotes[peerId]) return this.remotes[peerId];
+    var ent = this.buildRemotePlayer(name, peerId);
+    this.entities.push(ent);
+    return ent;
   };
 
-  /* En el anfitrion, el jugador remoto es una entidad normal movida por su entrada */
-  Game.prototype.updateRemotePlayers = function (dt) {
-    var rp = this.remotePlayer;
+  Game.prototype.removeRemotePlayer = function (peerId) {
+    var rp = this.remotes[peerId];
     if (!rp) return;
+    var i = this.entities.indexOf(rp);
+    if (i >= 0) this.entities.splice(i, 1);
+    if (rp.group && rp.group.parent) rp.group.parent.remove(rp.group);
+    if (rp.carrying) this.dropFlag(rp);
+    delete this.remotes[peerId];
+  };
+
+  /* En el anfitrion, cada jugador remoto es una entidad movida por su entrada */
+  Game.prototype.updateRemotePlayers = function (dt) {
+    var list = this.remotes || {};
+    for (var key in list) this.updateRemotePlayer(list[key], dt);
+  };
+
+  Game.prototype.updateRemotePlayer = function (rp, dt) {
+    if (!rp) return;
+    var self = this;
+    function respawn() {
+      var sp = B.Bots.spawnPointFor(self, rp.team);
+      rp.pos.x = sp[0]; rp.pos.z = sp[1]; rp.pos.y = (sp[2] || 0) + 0.08;
+      rp.vel.x = rp.vel.y = rp.vel.z = 0;
+      rp.health = rp.maxHealth; rp.armor = 50; rp.alive = true; rp.invuln = 1.6;
+      rp.ammo.pistol.reserve = 999;
+      if (rp.group) rp.group.visible = true;
+      B.Audio.spawn();
+    }
     if (!rp.alive) {
       rp.respawnTimer -= dt;
-      if (rp.respawnTimer <= 0) {
-        var sp = B.Bots.spawnPointFor(this, rp.team);
-        rp.pos.x = sp[0]; rp.pos.z = sp[1]; rp.pos.y = (sp[2] || 0) + 0.08;
-        rp.vel.x = rp.vel.y = rp.vel.z = 0;
-        rp.health = rp.maxHealth; rp.armor = 50; rp.alive = true; rp.invuln = 1.6;
-        rp.ammo.pistol.reserve = 999;
-        if (rp.group) rp.group.visible = true;
-        B.Audio.spawn();
-      } else {
-        this.moveCombatant(rp, 0, 0, dt, false);
-      }
+      if (rp.respawnTimer <= 0) respawn();
+      else this.moveCombatant(rp, 0, 0, dt, false);
       return;
     }
     var axis = rp.netInputAxis || { x: 0, z: 0 };

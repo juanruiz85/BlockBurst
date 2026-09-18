@@ -42,27 +42,32 @@ Y entra en la direccion que imprime la consola.
 
 ## Multijugador
 
-Se juega de dos en dos por conexion directa entre los navegadores (WebRTC). No hay
-servidor intermedio ni cuentas: los dos jugadores intercambian una vez dos codigos de
-texto y a partir de ahi hablan entre ellos.
+### Salas por codigo (hasta 10 jugadores)
 
-| Paso | Anfitrion | Invitado |
-|---|---|---|
-| 1 | Pestana Multijugador, pulsa **Crear sala** | |
-| 2 | Envia su **codigo de sala** al invitado | Pega el codigo y pulsa **Generar respuesta** |
-| 3 | Pega la **respuesta** y pulsa **Conectar** | Envia su respuesta al anfitrion |
-| 4 | La partida arranca sola | Entra a la partida automaticamente |
+1. Pestana **Multijugador** → **Crear sala**. Aparece un codigo corto (por ejemplo `K7M2P`).
+2. Pasa ese codigo a quien quieras invitar (boton **Copiar invitacion**).
+3. Cada invitado abre el juego, escribe el codigo y pulsa **Unirse**. Entra a la sala solo.
+4. Cuando esteis, el anfitrion pulsa **Empezar partida**. Si alguien entra con la partida ya
+   en marcha, se incorpora directamente.
 
-Detalles utiles:
+| Aspecto | Como funciona |
+|---|---|
+| Capacidad | Hasta 10 jugadores en la misma sala (anfitrion + 9 invitados) |
+| Encuentro | Un broker MQTT publico solo sirve para que os encontreis; la partida va despues directa entre navegadores |
+| Autoridad | El navegador del **anfitrion** simula, reparte los bots y decide los impactos |
+| Invitados | Envian su entrada 30 veces por segundo, predicen su movimiento y reciben instantaneas 20 veces por segundo interpoladas |
+| Conexion directa | STUN publico y, si hace falta, retransmision TURN publica de respaldo para redes restrictivas |
+| Vida de la sala | Permanece abierta **mientras haya alguien dentro**; si se vacia, se cierra sola tras **1 minuto** con cuenta atras a la vista |
+| Si el anfitrion sale | La sala termina para todos (su navegador es la sala); los invitados lo ven avisado |
 
-- El **anfitrion** simula todo (jugadores, bots, modos) y decide los impactos. El invitado
-  envia su entrada 30 veces por segundo, predice su propio movimiento y recibe instantaneas
-  20 veces por segundo, que se interpolan para que se vea fluido.
-- El modo y el mapa son los elegidos en la pestana **Jugar**; en los modos por equipos los
-  dos jugadores van al **mismo bando** contra los bots.
-- Los codigos son largos porque contienen la negociacion cifrada del enlace.
-- Si una red es muy restrictiva (NAT simetrico sin salida UDP), el enlace puede no cuajar:
-  cambia de red o intercambia quien crea la sala. No hay servidor de retransmision.
+No hay cuentas, no hay servidor propio y no hace falta instalar nada. El modo por equipos
+mete a los dos jugadores en el **mismo bando** contra los bots.
+
+### Modo sin relay (codigos manuales)
+
+Si el broker publico no estuviera disponible (o prefieres no depender de el), en la misma
+pestana hay un desplegable con el enlace manual: el anfitrion genera un codigo, el invitado
+devuelve una respuesta y con eso se conectan. Es el mismo WebRTC, sin ningun intermediario.
 
 ## Controles
 
@@ -163,9 +168,12 @@ directamente desde el disco sin servidor ni empaquetador.
 npm run check        # Comprueba la sintaxis de todos los modulos
 npm run validate     # Verifica geometria, spawns, rutas y objetivos de los 6 mapas
 npm run simulate     # Ejecuta 6 partidas completas sin navegador y prueba el protocolo de red
+npm run mqtttest     # Comprueba el broker publico que usan las salas
 npm run build:single # Genera dist/BlockBurst.html (un solo archivo autocontenido)
 npm run capture      # Abre el juego en Chrome headless y guarda capturas en docs/
-npm run nettest      # Abre DOS navegadores y verifica el multijugador de extremo a extremo
+npm run nettest      # Dos navegadores: verifica el modo manual de extremo a extremo
+npm run roomtest     # Tres navegadores: crea una sala, une a dos invitados y comprueba el cierre
+npm run killchrome   # Cierra los navegadores de prueba que hayan quedado abiertos
 npm test             # check + validate + simulate + build:single
 ```
 

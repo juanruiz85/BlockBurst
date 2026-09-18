@@ -19,6 +19,33 @@
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun.cloudflare.com:3478" }
   ];
+  /* Retransmision publica de respaldo: mejora mucho la conexion entre redes distintas
+     (sobre todo detras de NAT simetrico). Si no responde, el ICE la descarta sola. */
+  var TURN = [
+    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+  ];
+  var ICE = [].concat(STUN, TURN);
+
+  var MQTT_URLS = ["wss://broker.emqx.io:8084/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
+  var APP = "bbx7q2";
+  var HELLO_MS = 2000;
+  var MAX_PLAYERS = 10;
+
+  function baseTopic(room) { return "bb/" + APP + "/" + String(room || "").toUpperCase(); }
+  function shortId() {
+    var s = "";
+    var abc = "abcdefghijkmnpqrstuvwxyz23456789";
+    for (var i = 0; i < 6; i++) s += abc.charAt(Math.floor(Math.random() * abc.length));
+    return s;
+  }
+  function roomCode() {
+    var s = "";
+    var abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    for (var i = 0; i < 5; i++) s += abc.charAt(Math.floor(Math.random() * abc.length));
+    return s;
+  }
   var FAST_HZ = 20;      // instantaneas por segundo (canal no fiable)
   var INPUT_HZ = 30;     // entradas por segundo (canal no fiable)
   var ROSTER_MS = 2000;  // reenvio de la plantilla de jugadores
@@ -271,37 +298,42 @@
     on: function (type, fn) { this.handlers[type] = fn; },
     off: function () { this.handlers = {}; },
 
-    _onData: function (raw) {
+    _onData: function (raw, peer) {
       var msg;
       try { msg = JSON.parse(raw); } catch (e) { return; }
       if (!msg || !msg.k) return;
-      if (msg.k === "pg") { this.sendRel("po", msg.t); return; }         // ping del invitado
-      if (msg.k === "po") { this.ping = Math.max(1, now() - msg.d); return; } // respuesta del anfitrion
+      if (msg.k === "pg") { this.sendRel("po", msg.t); return; }
+      if (msg.k === "po") { this.ping = Math.max(1, now() - msg.d); return; }
       var fn = this.handlers[msg.k];
-      if (fn) fn(msg.d, msg.t);
+      this.received[msg.k] = (this.received[msg.k] || 0) + 1;
+      if (fn) fn(msg.d, msg.t, peer);
     },
 
     _send: function (kind, payload, fast) {
       var link = this.link;
       if (!link) return false;
-      var ch = fast ? (link.fast || link.rel) : (link.rel || link.fast);
-      var msg = JSON.stringify({ k: kind, t: now(), d: payload });
-      if (!ch || ch.readyState !== "open") {
-        // Los mensajes fiables se guardan hasta que el canal abra (por ejemplo el inicio)
-        if (!fast) (link.outbox || (link.outbox = [])).push(msg);
-        return false;
-      }
-      try { ch.send(msg); return true; } catch (e) { return false; }
+      return this._sendLink(link, kind, payload, fast);
     },
 
     _flush: function () {
       var link = this.link;
-      if (!link || !link.outbox || !link.rel || link.rel.readyState !== "open") return;
-      var q = link.outbox.splice(0, link.outbox.length);
-      for (var i = 0; i < q.length; i++) { try { link.rel.send(q[i]); } catch (e) { } }
+      if (link) this._flushLink(link);
     },
-    sendFast: function (kind, payload) { return this._send(kind, payload, true); },
-    sendRel: function (kind, payload) { return this._send(kind, payload, false); },
+
+    sendFast: function (kind, payload) {
+      if (this.room) {
+        if (this.isHost) this.broadcast(kind, payload, true); else this.toHost(kind, payload, true);
+        return true;
+      }
+      return this._send(kind, payload, true);
+    },
+    sendRel: function (kind, payload) {
+      if (this.room) {
+        if (this.isHost) this.broadcast(kind, payload, false); else this.toHost(kind, payload, false);
+        return true;
+      }
+      return this._send(kind, payload, false);
+    },
 
     close: function () {
       if (this.link && this.link.pc) { try { this.link.pc.close(); } catch (e) { } }
@@ -311,6 +343,258 @@
       this.role = null;
       this.ping = 0;
       this.handlers = {};
+    },
+
+    /* ======================= salas por codigo (MQTT) =======================
+       Un broker publico solo sirve para que los jugadores se encuentren; el juego
+       va despues directo entre navegadores. El anfitrion es la autoridad y mantiene
+       una conexion por jugador (estrella). */
+
+    room: null,
+    peers: null,
+    stats: {},
+    received: {},
+    lastSkip: "",
+    lastSendError: "",
+    maxPlayers: MAX_PLAYERS,
+    mqtt: null,
+    peerId: null,
+    isHost: false,
+
+    openRoom: function (code, name, asHost, onStatus) {
+      var self = this;
+      this.room = String(code || roomCode()).toUpperCase();
+      this.peerId = shortId();
+      this.isHost = !!asHost;
+      this.peers = {};
+      this.role = asHost ? "host" : "guest";
+      this.connected = false;
+      this.active = false;
+      this.lastError = "";
+      this._onStatus = onStatus;
+      this.peerName = name || (asHost ? "Anfitrion" : "Invitado");
+
+      var base = baseTopic(this.room);
+      var url = MQTT_URLS[0];
+      var mq = new B.Mqtt(url, "bb-" + this.room + "-" + this.peerId).connect();
+      this.mqtt = mq;
+      this.topicBase = base;
+      this.topicMe = base + "/" + this.peerId;
+
+      mq.on("open", function () {
+        self.subscribed = 0;
+        mq.subscribe(self.topicMe);
+        if (asHost) mq.subscribe(base + "/all");
+        if (self._onStatus) self._onStatus("signaling");
+      });
+      mq.on("suback", function () {
+        self.subscribed++;
+        if (self.subscribed < (asHost ? 2 : 1)) return;
+        if (asHost) self._hostAnnounce();
+        else self._guestHello();
+      });
+      mq.on("message", function (topic, text) { self._onSig(topic, text); });
+      mq.on("error", function (e) {
+        if (self._onStatus) self._onStatus("mqtt-error");
+        void e;
+      });
+      mq.on("close", function () {
+        if (self.connected || self._onStatus) self._onStatus("mqtt-closed");
+      });
+      return this.room;
+    },
+
+    leaveRoom: function () {
+      var self = this;
+      var ids = Object.keys(this.peers || {});
+      ids.forEach(function (id) { self._sig("closed", { to: id }); });
+      ids.forEach(function (id) {
+        var p = self.peers[id];
+        if (p && p.pc) { try { p.pc.close(); } catch (e) { } }
+      });
+      this.peers = {};
+      if (this.mqtt) { try { this.mqtt.close(); } catch (e) { } }
+      this.mqtt = null;
+      if (this._helloTimer) clearInterval(this._helloTimer);
+      if (this._beatTimer) clearInterval(this._beatTimer);
+      this.room = null;
+      this.active = false;
+      this.connected = false;
+      this.role = null;
+      this.mqttConnected = false;
+    },
+
+    _sig: function (type, extra) {
+      var msg = { type: type, from: this.peerId, name: this.peerName };
+      if (extra) for (var k in extra) msg[k] = extra[k];
+      if (this.mqtt) this.mqtt.publish(this.topicBase + "/" + (msg.to || "all"), JSON.stringify(msg));
+    },
+
+    _hostAnnounce: function () {
+      var self = this;
+      var beat = function () {
+        if (self.isHost) self._sig("host");
+      };
+      beat();
+      if (this._helloTimer) clearInterval(this._helloTimer);
+      this._helloTimer = setInterval(beat, HELLO_MS * 2);
+      if (this._onStatus) this._onStatus("room-open");
+    },
+
+    _guestHello: function () {
+      var self = this;
+      var beat = function () {
+        if (!self.connected) self._sig("hello");
+      };
+      beat();
+      if (this._helloTimer) clearInterval(this._helloTimer);
+      this._helloTimer = setInterval(beat, HELLO_MS);
+      if (this._onStatus) this._onStatus("searching");
+    },
+
+    _onSig: function (topic, text) {
+      var self = this;
+      var m;
+      try { m = JSON.parse(text); } catch (e) { return; }
+      if (!m || m.from === this.peerId) return;
+
+      if (this.isHost) {
+        if (m.type === "hello") return this._hostOffer(m.from, m.name);
+        if (m.type === "answer") return this._hostAnswer(m.from, m.sdp);
+        return;
+      }
+      // Invitado: solo escucha al anfitrion
+      if (m.type === "offer" && !this.link) return this._guestAnswer(m.sdp);
+      if (m.type === "full" && this._onStatus) return this._onStatus("room-full");
+      if (m.type === "closed" && this._onStatus) this._onStatus("room-closed");
+      void topic;
+    },
+
+    _hostOffer: function (guestId, guestName) {
+      var self = this;
+      if (this.peers[guestId]) return;
+      if (Object.keys(this.peers).length >= MAX_PLAYERS - 1) {
+        this._sig("full", { to: guestId });
+        return;
+      }
+      var pc = new RTCPeerConnection({ iceServers: ICE });
+      var peer = { id: guestId, name: guestName || "Jugador", pc: pc, fast: null, rel: null, connected: false };
+      this.peers[guestId] = peer;
+      this._wirePeer(peer, true);
+      pc.createOffer()
+        .then(function (o) { return pc.setLocalDescription(o); })
+        .then(function () { return waitIce(pc); })
+        .then(function () { self._sig("offer", { sdp: pc.localDescription.sdp, to: guestId }); })
+        .catch(function (e) { self.lastError = e.message; delete self.peers[guestId]; });
+    },
+
+    _hostAnswer: function (guestId, sdp) {
+      var peer = this.peers[guestId];
+      if (peer && peer.pc) peer.pc.setRemoteDescription({ type: "answer", sdp: sdp }).catch(function () { });
+    },
+
+    _guestAnswer: function (offerSdp) {
+      var self = this;
+      var pc = new RTCPeerConnection({ iceServers: ICE });
+      var link = { pc: pc, fast: null, rel: null, isHost: false };
+      this.link = link;
+      pc.addEventListener("datachannel", function (ev) { self._peerChannel(link, ev.channel, null); });
+      pc.setRemoteDescription({ type: "offer", sdp: offerSdp })
+        .then(function () { return pc.createAnswer(); })
+        .then(function (a) { return pc.setLocalDescription(a); })
+        .then(function () { return waitIce(pc); })
+        .then(function () { self._sig("answer", { sdp: pc.localDescription.sdp }); })
+        .catch(function (e) { self.lastError = e.message; });
+    },
+
+    _wirePeer: function (peer, isHost) {
+      var self = this;
+      var fast = peer.pc.createDataChannel("bb-fast", { ordered: false, maxRetransmits: 0 });
+      var rel = peer.pc.createDataChannel("bb-rel", { ordered: true });
+      var link = { pc: peer.pc, fast: null, rel: null, isHost: isHost, peer: peer };
+      this._peerChannel(link, fast, peer);
+      this._peerChannel(link, rel, peer);
+      peer.link = link;
+      peer.pc.addEventListener("datachannel", function (ev) { self._peerChannel(link, ev.channel, peer); });
+      peer.pc.addEventListener("connectionstatechange", function () {
+        var st = peer.pc.connectionState;
+        if (st === "failed" || st === "disconnected" || st === "closed") self._peerGone(peer.id);
+      });
+    },
+
+    _peerChannel: function (link, channel, peer) {
+      var self = this;
+      if (!channel) return;
+      if (channel.label === "bb-fast") link.fast = channel; else link.rel = channel;
+      channel.addEventListener("open", function () {
+        if (link.fast && link.rel && link.fast.readyState === "open" && link.rel.readyState === "open") {
+          if (peer) peer.connected = true;
+          self.connected = true;
+          self.active = true;
+          link.outbox = link.outbox || [];
+          self._flushLink(link);
+          if (self._onStatus) self._onStatus("peer-connected", peer ? peer.id : "host");
+        }
+      });
+      channel.addEventListener("message", function (ev) { self._onData(ev.data, peer); });
+      channel.addEventListener("close", function () { if (peer) self._peerGone(peer.id); });
+    },
+
+    _flushLink: function (link) {
+      if (!link.outbox || !link.rel || link.rel.readyState !== "open") return;
+      var q = link.outbox.splice(0, link.outbox.length);
+      for (var i = 0; i < q.length; i++) { try { link.rel.send(q[i]); } catch (e) { } }
+    },
+
+    _peerGone: function (id) {
+      var p = this.peers[id];
+      if (!p) return;
+      if (p.pc) { try { p.pc.close(); } catch (e) { } }
+      delete this.peers[id];
+      if (this._onStatus) this._onStatus("peer-left", id);
+    },
+
+    playerCount: function () {
+      var n = 0;
+      var list = this.peers || {};
+      for (var k in list) if (list[k] && list[k].connected) n++;
+      return n + 1;
+    },
+
+    peerList: function () {
+      var out = [];
+      var list = this.peers || {};
+      for (var k in list) if (list[k]) out.push({ id: k, name: list[k].name, connected: !!list[k].connected });
+      return out;
+    },
+
+    /* Envio en estrella: el anfitrion difunde a todos; el invitado habla con el anfitrion */
+    broadcast: function (kind, payload, fast) {
+      var list = this.peers || {};
+      for (var k in list) if (list[k] && list[k].connected) this._sendToPeer(list[k], kind, payload, fast);
+    },
+    toHost: function (kind, payload, fast) {
+      if (this.link) this._sendLink(this.link, kind, payload, fast);
+    },
+    sendTo: function (peerId, kind, payload, fast) {
+      var p = this.peers && this.peers[peerId];
+      if (p) this._sendToPeer(p, kind, payload, fast);
+    },
+    _sendToPeer: function (peer, kind, payload, fast) {
+      if (peer && peer.link) this._sendLink(peer.link, kind, payload, fast);
+    },
+    _sendLink: function (link, kind, payload, fast) {
+      var ch = fast ? (link.fast || link.rel) : (link.rel || link.fast);
+      this.stats[kind + "_try"] = (this.stats[kind + "_try"] || 0) + 1;
+      if (!ch || ch.readyState !== "open") {
+        this.lastSkip = kind + ":" + (ch ? ch.readyState : "sin-canal");
+        var msg0 = JSON.stringify({ k: kind, t: now(), d: payload });
+        if (!fast) (link.outbox || (link.outbox = [])).push(msg0);
+        return false;
+      }
+      var msg = JSON.stringify({ k: kind, t: now(), d: payload });
+      try { ch.send(msg); this.stats[kind] = (this.stats[kind] || 0) + 1; return true; }
+      catch (e) { this.lastSendError = kind + ": " + String((e && e.message) || e); return false; }
     },
 
     status: function () {
