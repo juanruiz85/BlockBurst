@@ -138,14 +138,17 @@ Client.prototype.shot = function (file, quality) {
     /* Modo archivo unico: node tools/screenshot.js dist/BlockBurst.html */
     var singlePage = process.argv[2];
     if (singlePage) {
-      var rel = String(singlePage).replace(/\\/g, '/').replace(/^\.?\//, '');
-      await goto('http://127.0.0.1:' + PORT + '/' + rel, 4500,
+      var target = /^https?:/i.test(String(singlePage))
+        ? String(singlePage)
+        : ('http://127.0.0.1:' + PORT + '/' + String(singlePage).replace(/\\/g, '/').replace(/^\.?\//, ''));
+      var isRemote = /^https?:/i.test(target);
+      await goto(target, 5000,
         'window.BLITZ && window.BLITZ.debug && document.getElementById("loading").hidden && document.querySelectorAll("#menuBody .card").length > 0');
       shots.push({ name: 'captura-archivo-unico.png', size: await client.shot(path.join(OUT, 'captura-archivo-unico.png')) });
       var d1 = await client.evaluate('(function(){var d=window.BLITZ&&window.BLITZ.debug;if(!d)return "sin debug";return JSON.stringify({estado:d.game.state,mapas:(window.BLITZ.MAPS||[]).length,modos:(window.BLITZ.MODES||[]).length,armas:(window.BLITZ.WEAPONS||[]).length,p2p:typeof RTCPeerConnection,menu:!document.getElementById("menu").hidden});})()');
       console.log('Captura generada:');
       shots.forEach(function (s) { console.log('  ' + s.name + '  ' + Math.round(s.size / 1024) + ' KB'); });
-      console.log('Diagnostico del archivo unico: ' + (d1 && d1.result ? d1.result.value : JSON.stringify(d1)));
+      console.log('Diagnostico de ' + target + ': ' + (d1 && d1.result ? d1.result.value : JSON.stringify(d1)));
       var errs1 = client.events.filter(function (e) {
         return e.method === 'Runtime.exceptionThrown' ||
           (e.method === 'Runtime.consoleAPICalled' && e.params.type === 'error') ||
