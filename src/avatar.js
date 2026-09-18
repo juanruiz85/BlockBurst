@@ -57,18 +57,18 @@
       head.castShadow = true; head.receiveShadow = true;
 
       var armL = new THREE.Group();
-      var armLm = box(0.24, 0.66, 0.24, skin, 0, -0.33, 0);
-      armL.add(armLm); armL.position.set(-0.44, 1.48, 0);
+      var armLm = box(0.27, 0.72, 0.27, skin, 0, -0.36, 0);
+      armL.add(armLm); armL.position.set(-0.43, 1.5, 0);
       var armR = new THREE.Group();
-      var armRm = box(0.24, 0.66, 0.24, skin, 0, -0.33, 0);
-      armR.add(armRm); armR.position.set(0.44, 1.48, 0);
+      var armRm = box(0.27, 0.72, 0.27, skin, 0, -0.36, 0);
+      armR.add(armRm); armR.position.set(0.43, 1.5, 0);
 
       var legL = new THREE.Group();
-      var legLm = box(0.26, 0.8, 0.26, pants, 0, -0.4, 0);
-      legL.add(legLm); legL.position.set(-0.17, 0.8, 0);
+      var legLm = box(0.29, 0.86, 0.29, pants, 0, -0.43, 0);
+      legL.add(legLm); legL.position.set(-0.16, 0.86, 0);
       var legR = new THREE.Group();
-      var legRm = box(0.26, 0.8, 0.26, pants, 0, -0.4, 0);
-      legR.add(legRm); legR.position.set(0.17, 0.8, 0);
+      var legRm = box(0.29, 0.86, 0.29, pants, 0, -0.43, 0);
+      legR.add(legRm); legR.position.set(0.16, 0.86, 0);
 
       g.add(torso, head, armL, armR, legL, legR);
 
@@ -101,11 +101,11 @@
       av.head.rotation.y = Math.sin(av.phase * 0.3) * 0.05 * speed;
     },
 
-    /* Poses para la vista de tercera persona / armas */
+    /* Pose de apuntado: solo el brazo derecho sube, el izquierdo queda visible */
     aim: function (av, pitch) {
       var p = B.clamp(pitch, -1.1, 1.1);
-      av.armR.rotation.x = -1.45 + p * 0.7;
-      av.armL.rotation.x = -1.25 + p * 0.7;
+      av.armR.rotation.x = -1.15 + p * 0.6;
+      av.armL.rotation.x = -0.25 + p * 0.2;
     }
   };
 })();

@@ -90,8 +90,12 @@
     return out;
   }
 
-  function pickSpread(points, count, minDist) {
-    var pool = B.shuffle(points.slice());
+  function pickSpread(points, count, minDist, rng) {
+    var pool = points.slice();
+    for (var s = pool.length - 1; s > 0; s--) {
+      var j = Math.floor((rng ? rng() : Math.random()) * (s + 1));
+      var t = pool[s]; pool[s] = pool[j]; pool[j] = t;
+    }
     var out = [];
     var d2 = minDist * minDist;
     for (var i = 0; i < pool.length && out.length < count; i++) {
@@ -118,6 +122,30 @@
     return best;
   }
 
+  var RAMP_COLOR = "#98a2b0";
+
+  function strictOverlap(a, b, eps) {
+    eps = eps == null ? 0.05 : eps;
+    return a.minX < b.maxX - eps && a.maxX > b.minX + eps &&
+      a.minY < b.maxY - eps && a.maxY > b.minY + eps &&
+      a.minZ < b.maxZ - eps && a.maxZ > b.minZ + eps;
+  }
+
+  function structBox(s) {
+    return {
+      minX: s.p[0] - s.s[0] / 2, maxX: s.p[0] + s.s[0] / 2,
+      minY: s.p[1], maxY: s.p[1] + s.s[1],
+      minZ: s.p[2] - s.s[2] / 2, maxZ: s.p[2] + s.s[2] / 2
+    };
+  }
+
+  function sameBox(a, b, eps) {
+    eps = eps == null ? 1e-6 : eps;
+    return Math.abs(a.minX - b.minX) < eps && Math.abs(a.maxX - b.maxX) < eps &&
+      Math.abs(a.minY - b.minY) < eps && Math.abs(a.maxY - b.maxY) < eps &&
+      Math.abs(a.minZ - b.minZ) < eps && Math.abs(a.maxZ - b.maxZ) < eps;
+  }
+
   function clearOf(x, z, areas) {
     for (var i = 0; i < areas.length; i++) {
       var a = areas[i];
@@ -130,6 +158,7 @@
   function city(seed, o) {
     var rand = B.rng(seed);
     var out = [];
+    var pending = [];
     var half = o.size / 2;
     var cell = o.cell;
     var n = Math.round(o.size / cell);
@@ -147,7 +176,10 @@
         var d = cell * (o.fill || 0.78);
         var h = Math.round(o.minH + rand() * (o.maxH - o.minH));
         var c = o.colors[Math.floor(rand() * o.colors.length)];
-        out.push({ p: [r2(cx), 0, r2(cz)], s: [r2(w), h, r2(d)], c: c });
+        var bld = { p: [r2(cx), -0.25, r2(cz)], s: [r2(w), h + 0.25, r2(d)], c: c };
+        out.push(bld);
+        // Acera: da base visual al edificio y ordena la calle
+        out.push({ p: [r2(cx), 0.02, r2(cz)], s: [r2(w + 0.34), 0.14, r2(d + 0.34)], c: o.curb || "#9aa3b0", soft: true });
 
         if (o.roofDetail && h > 3 && rand() < 0.55) {
           out.push({
@@ -156,18 +188,38 @@
             c: o.detail
           });
         }
-        if (o.stairs && h >= 2.6) {
+        if (o.stairs && h >= 3 && h <= 7) {
           var run = Math.round(h * 1.6 + 1.2);
-          out.push({
-            type: "ramp", axis: "z", dir: 1,
-            p: [r2(cx - w / 2 - 1.4), 0, r2(cz - d / 2 - run / 2)],
-            s: [1.7, h, run], c: o.stairColor || c
+          var rampX = r2(cx - w / 2 - 1.35);
+          pending.push({
+            ramp: { type: "ramp", axis: "z", dir: 1, p: [rampX, 0, r2(cz - d / 2 - run / 2)], s: [1.7, h, run], c: RAMP_COLOR },
+            landing: { p: [rampX, h - 0.34, r2(cz - d / 2 - 0.5)], s: [2.2, 0.34, 1.6], c: RAMP_COLOR },
+            owner: structBox(bld)
           });
         }
       }
     }
 
     (o.blocks || []).forEach(function (b) { out.push(b); });
+
+    // Rampas: solo se aceptan si el hueco de detras esta libre y no chocan entre si
+    var hard = out.filter(function (s) { return !s.soft; });
+    var boxes = solidBoxes(hard);
+    var accepted = [];
+    pending.forEach(function (item) {
+      if (accepted.length >= 16) return;
+      var b1 = structBox(item.ramp), b2 = structBox(item.landing);
+      for (var i = 0; i < boxes.length; i++) {
+        if (sameBox(boxes[i], item.owner)) continue;
+        if (strictOverlap(b1, boxes[i]) || strictOverlap(b2, boxes[i])) return;
+      }
+      for (var j = 0; j < accepted.length; j++) {
+        if (strictOverlap(b1, accepted[j]) || strictOverlap(b2, accepted[j])) return;
+      }
+      accepted.push(b1, b2);
+      out.push(item.ramp, item.landing);
+    });
+
     return out;
   }
 
@@ -176,12 +228,12 @@
     var hasGround = cfg.ground !== false;
     var pts = candidates(cfg, boxes);
     var half = cfg.size / 2;
-    var seedRng = B.rng(seed);
+    var rng = B.rng(seed);
 
-    var spawns = pickSpread(pts, 16, cfg.size * 0.2);
+    var spawns = pickSpread(pts, 16, cfg.size * 0.2, rng);
     if (spawns.length < 8) spawns = pts.slice(0, 12);
 
-    var waypoints = pickSpread(pts, 44, cfg.size * 0.08).map(function (p) { return [p[0], p[1]]; });
+    var waypoints = pickSpread(pts, 44, cfg.size * 0.08, rng).map(function (p) { return [p[0], p[1]]; });
     if (waypoints.length < 10) waypoints = pts.map(function (p) { return [p[0], p[1]]; });
 
     var pickSrc = pts.slice();
@@ -191,20 +243,78 @@
       var p = nearest(pts, c[0], c[1]);
       if (p) pickSrc.unshift(p, p, p, p);
     });
-    var pickups = pickSpread(pickSrc, 10, cfg.size * 0.18);
+    var pickups = pickSpread(pickSrc, 10, cfg.size * 0.18, rng);
     if (pickups.length < 6) pickups = pts.slice(0, 8);
 
     var hillP = nearest(pts, 0, 0) || [0, 0, 0];
     var redP = nearest(pts, -half + 9, -half + 9) || [-half + 9, -half + 9, 0];
     var blueP = nearest(pts, half - 9, half - 9) || [half - 9, half - 9, 0];
 
-    var barrels = pickSpread(pts, 6, cfg.size * 0.2).map(function (p) { return [p[0], p[2], p[1]]; });
+    var barrels = pickSpread(pts, 6, cfg.size * 0.2, rng).map(function (p) { return [p[0], p[2], p[1]]; });
 
-    void seedRng;
+    // Props de calle: postes, cajas, barreras y arboles. Dan escala, cobijo y vida.
+    var boxes = solidBoxes(cfg.structures.filter(function (s) { return !s.soft; }));
+    var rampBoxes = (cfg.structures || []).filter(function (s) { return s.type === "ramp"; }).map(structBox);
+    var blocked = boxes.concat(rampBoxes);
+    var propTypes = [
+      { s: [0.34, 3.2, 0.34], c: cfg.theme.prop || "#26303f" },
+      { s: [0.95, 0.95, 0.95], c: cfg.swatch[1] || cfg.swatch[0] },
+      { s: [2.8, 0.85, 0.5], c: cfg.theme.edge || cfg.swatch[0] },
+      { s: [0.44, 2.4, 0.44], c: "#6b4a2a", top: [2.6, 1.1, 2.6], topC: cfg.swatch[2] || "#5d7a3a", top2: [1.7, 1.0, 1.7] }
+    ];
+    var propPts = pts.filter(function (p) {
+      if (spawns.indexOf(p) !== -1 || pickups.indexOf(p) !== -1) return false;
+      var i;
+      if (B.dist2(p[0], p[1], hillP[0], hillP[1]) < 144) return false;
+      if (B.dist2(p[0], p[1], redP[0], redP[1]) < 81) return false;
+      if (B.dist2(p[0], p[1], blueP[0], blueP[1]) < 81) return false;
+      for (i = 0; i < spawns.length; i++) if (B.dist2(p[0], p[1], spawns[i][0], spawns[i][1]) < 36) return false;
+      for (i = 0; i < waypoints.length; i++) if (B.dist2(p[0], p[1], waypoints[i][0], waypoints[i][1]) < 16) return false;
+      for (i = 0; i < barrels.length; i++) if (B.dist2(p[0], p[1], barrels[i][0], barrels[i][2]) < 25) return false;
+      return true;
+    });
+    var props = [];
+    pickSpread(propPts, 16, cfg.size * 0.13, rng).forEach(function (p, i) {
+      var pt = propTypes[i % propTypes.length];
+      var box = {
+        minX: p[0] - pt.s[0] / 2, maxX: p[0] + pt.s[0] / 2,
+        minY: p[2], maxY: p[2] + pt.s[1],
+        minZ: p[1] - pt.s[2] / 2, maxZ: p[1] + pt.s[2] / 2
+      };
+      for (var k = 0; k < blocked.length; k++) if (strictOverlap(box, blocked[k])) return;
+      props.push({ p: [p[0], p[2], p[1]], s: pt.s, c: pt.c });
+      if (pt.top) props.push({ p: [p[0], r2(p[2] + pt.s[1] - 0.35), p[1]], s: pt.top, c: pt.topC });
+      if (pt.top2) props.push({ p: [p[0], r2(p[2] + pt.s[1] + 0.72), p[1]], s: pt.top2, c: pt.topC });
+    });
+
+    // Calzada: retícula viaria para que las calles no sean un vacio verde
+    if (cfg.grid) {
+      var gcell = cfg.grid.cell, gse = cfg.grid.streetEvery;
+      var gn = Math.round(cfg.size / gcell);
+      var roadC = cfg.theme.road || "#4a4f57";
+      var haz = cfg.hazards || [];
+      for (var gi = 0; gi < gn; gi++) {
+        if (gi % gse !== 0) continue;
+        var gx = -half + gcell / 2 + gi * gcell;
+        var strips = [
+          { p: [r2(gx), 0.03, 0], s: [r2(gcell - 0.9), 0.06, r2(cfg.size - 2)], c: roadC, soft: true },
+          { p: [0, 0.03, r2(gx)], s: [r2(cfg.size - 2), 0.06, r2(gcell - 0.9)], c: roadC, soft: true }
+        ];
+        strips.forEach(function (st) {
+          var b = structBox(st);
+          for (var k = 0; k < haz.length; k++) {
+            var hb = { minX: haz[k].min[0], maxX: haz[k].max[0], minY: haz[k].min[1], maxY: haz[k].max[1], minZ: haz[k].min[2], maxZ: haz[k].max[2] };
+            if (strictOverlap(b, hb)) return;
+          }
+          props.push(st);
+        });
+      }
+    }
+
     return {
       id: cfg.id, name: cfg.name, tagline: cfg.tagline, size: cfg.size,
       theme: cfg.theme, ground: hasGround,
-      structures: cfg.structures, hazards: cfg.hazards || [],
+      structures: cfg.structures.concat(props), hazards: cfg.hazards || [],
       barrels: barrels, swatch: cfg.swatch,
       friction: cfg.friction == null ? 0.82 : cfg.friction,
       jump: cfg.jump == null ? 8.2 : cfg.jump,
@@ -222,23 +332,27 @@
   (function () {
     var o = {
       id: "distrito", name: "Distrito Doodle", tagline: "Calles anchas, azoteas conectadas por rampas y una plaza con fuente.",
-      size: 104, cell: 11, streetEvery: 2, fill: 0.76, gap: 0.08, minH: 3, maxH: 11,
+      size: 96, cell: 9, streetEvery: 3, fill: 0.72, gap: 0.06, minH: 3, maxH: 10,
       roofDetail: true, stairs: true, stairColor: "#8a4a2c",
       colors: ["#e8734a", "#f0a05a", "#d95f3b", "#f4c66a", "#c9563a", "#e08b6a"],
       detail: "#7a4226",
       open: [[0, 0, 13], [-44, -44, 10], [44, 44, 10]],
       blocks: [
-        { p: [0, 0, 0], s: [12, 0.5, 12], c: "#6f8f5a" },
-        { p: [0, 0.5, 0], s: [2.4, 2.6, 2.4], c: "#8aa0b8" },
-        { p: [0, 3.1, 0], s: [1.2, 1.2, 1.2], c: "#34d6f0" },
-        { p: [9, 0, 0], s: [1.4, 1, 9], c: "#5a4636" },
-        { p: [-9, 0, 0], s: [1.4, 1, 9], c: "#5a4636" }
+        { p: [0, 0, 0], s: [14, 0.4, 14], c: "#7d8f6a" },
+        { p: [0, 0.4, 0], s: [6.4, 0.8, 6.4], c: "#9aa3b0" },
+        { p: [0, 1.2, 0], s: [4.6, 0.25, 4.6], c: "#34d6f0" },
+        { p: [0, 1.45, 0], s: [1.5, 1.9, 1.5], c: "#8a94a3" },
+        { p: [0, 3.35, 0], s: [2, 0.35, 2], c: "#9aa3b0" },
+        { p: [9.5, 0, 0], s: [0.9, 0.55, 7], c: "#6b4a2a" },
+        { p: [-9.5, 0, 0], s: [0.9, 0.55, 7], c: "#6b4a2a" },
+        { p: [0, 0, 9.5], s: [7, 0.55, 0.9], c: "#6b4a2a" },
+        { p: [0, 0, -9.5], s: [7, 0.55, 0.9], c: "#6b4a2a" }
       ]
     };
     B.MAPS.push(finish(101, {
-      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(101, o),
-      theme: { sky: "#ffcf96", fog: "#f0ab6a", fogNear: 70, fogFar: 235, sun: "#fff2cc", sunIntensity: 1.15, ambient: "#ffe0c0", ambientIntensity: 0.34, hemi: 0.5, base: "#6f8f5a", edge: "#5a4636" },
-      hazards: [{ type: "water", min: [-48, -0.6, -52], max: [-36, 0.35, -40] }],
+      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(101, o), grid: { cell: 9, streetEvery: 3 },
+      theme: { road: "#5b5f66", skyTop: "#5fa8d8", sky: "#ffcf96", fog: "#f0ab6a", fogNear: 70, fogFar: 235, sun: "#fff2cc", sunIntensity: 1.15, ambient: "#ffe0c0", ambientIntensity: 0.34, hemi: 0.5, base: "#6f8f5a", edge: "#5a4636" },
+      hazards: [{ type: "water", min: [-44, -0.6, -46], max: [-32, 0.35, -34] }],
       swatch: ["#e8734a", "#f4c66a", "#6f8f5a"]
     }));
   })();
@@ -247,7 +361,7 @@
   (function () {
     var o = {
       id: "caldera", name: "Caldera Voxel", tagline: "Roca oscura, torres de basalto y rios de lava que no perdonan.",
-      size: 100, cell: 12, streetEvery: 2, fill: 0.7, gap: 0.16, minH: 2, maxH: 9,
+      size: 96, cell: 9, streetEvery: 3, fill: 0.68, gap: 0.1, minH: 2, maxH: 8,
       roofDetail: true, stairs: true, stairColor: "#6a5a50",
       colors: ["#4a4048", "#5a4a50", "#2e2830", "#6a5a52", "#3a3238"],
       detail: "#241f26",
@@ -260,12 +374,12 @@
       ]
     };
     B.MAPS.push(finish(202, {
-      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(202, o),
-      theme: { sky: "#3a2026", fog: "#5a2c22", fogNear: 40, fogFar: 175, sun: "#ff9a5a", sunIntensity: 0.9, ambient: "#ff7040", ambientIntensity: 0.3, hemi: 0.35, base: "#3a3238", edge: "#241f26" },
+      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(202, o), grid: { cell: 9, streetEvery: 3 },
+      theme: { road: "#2b252b", skyTop: "#241a2e", sky: "#3a2026", fog: "#5a2c22", fogNear: 40, fogFar: 175, sun: "#ff9a5a", sunIntensity: 0.9, ambient: "#ff7040", ambientIntensity: 0.3, hemi: 0.35, base: "#3a3238", edge: "#241f26" },
       hazards: [
-        { type: "lava", min: [-50, -1.2, 8], max: [-16, 0.25, 22], dmg: 26 },
-        { type: "lava", min: [16, -1.2, -22], max: [50, 0.25, -8], dmg: 26 },
-        { type: "lava", min: [-9, -1.2, -46], max: [9, 0.25, -36], dmg: 26 }
+        { type: "lava", min: [-46, -1.2, 8], max: [-14, 0.25, 20], dmg: 26 },
+        { type: "lava", min: [14, -1.2, -20], max: [46, 0.25, -8], dmg: 26 },
+        { type: "lava", min: [-9, -1.2, -44], max: [9, 0.25, -34], dmg: 26 }
       ],
       swatch: ["#4a4048", "#ff5a12", "#ff9a5a"]
     }));
@@ -275,7 +389,7 @@
   (function () {
     var o = {
       id: "glaciar", name: "Glaciar Azul", tagline: "Superficie resbaladiza, lagunas heladas y bloques de hielo.",
-      size: 96, cell: 11, streetEvery: 2, fill: 0.72, gap: 0.12, minH: 3, maxH: 10,
+      size: 90, cell: 9, streetEvery: 3, fill: 0.7, gap: 0.08, minH: 3, maxH: 9,
       roofDetail: true, stairs: true, stairColor: "#8fbfdc",
       colors: ["#a9d4ee", "#dff1fb", "#8fbfdc", "#c7e6f7", "#7fb0d0"],
       detail: "#6d9fbf",
@@ -286,12 +400,12 @@
       ]
     };
     B.MAPS.push(finish(303, {
-      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(303, o),
+      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(303, o), grid: { cell: 9, streetEvery: 3 },
       friction: 0.24, jump: 8.0,
-      theme: { sky: "#d9f0fb", fog: "#cfe8f5", fogNear: 60, fogFar: 215, sun: "#ffffff", sunIntensity: 1.05, ambient: "#eaf6ff", ambientIntensity: 0.42, hemi: 0.6, base: "#dff1fb", edge: "#8fbfdc" },
+      theme: { road: "#b6cfdd", skyTop: "#6fb8e8", sky: "#d9f0fb", fog: "#cfe8f5", fogNear: 60, fogFar: 215, sun: "#ffffff", sunIntensity: 1.05, ambient: "#eaf6ff", ambientIntensity: 0.42, hemi: 0.6, base: "#dff1fb", edge: "#8fbfdc" },
       hazards: [
-        { type: "water", min: [-46, -0.7, -46], max: [-26, 0.3, -26], slow: 0.55 },
-        { type: "water", min: [24, -0.7, 24], max: [46, 0.3, 46], slow: 0.55 }
+        { type: "water", min: [-43, -0.7, -43], max: [-24, 0.3, -24], slow: 0.55 },
+        { type: "water", min: [22, -0.7, 22], max: [43, 0.3, 43], slow: 0.55 }
       ],
       swatch: ["#dff1fb", "#8fbfdc", "#34d6f0"]
     }));
@@ -301,7 +415,7 @@
   (function () {
     var o = {
       id: "templo", name: "Templo Selva", tagline: "Terrazas de piedra, columnas antiguas y pozas de agua.",
-      size: 100, cell: 12, streetEvery: 2, fill: 0.68, gap: 0.14, minH: 2, maxH: 8,
+      size: 96, cell: 9, streetEvery: 3, fill: 0.68, gap: 0.1, minH: 2, maxH: 8,
       roofDetail: true, stairs: true, stairColor: "#b8a06a",
       colors: ["#6d8f4a", "#8aa85c", "#b8a06a", "#7f6a44", "#5d7a3a"],
       detail: "#4f7a3a",
@@ -320,11 +434,11 @@
       ]
     };
     B.MAPS.push(finish(404, {
-      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(404, o),
-      theme: { sky: "#bfe0a0", fog: "#9dc47a", fogNear: 55, fogFar: 200, sun: "#fff6c8", sunIntensity: 1.0, ambient: "#d8f0b8", ambientIntensity: 0.36, hemi: 0.55, base: "#4f7a3a", edge: "#3a5c2a" },
+      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(404, o), grid: { cell: 9, streetEvery: 3 },
+      theme: { road: "#8d7c58", skyTop: "#4a9ad0", sky: "#bfe0a0", fog: "#9dc47a", fogNear: 55, fogFar: 200, sun: "#fff6c8", sunIntensity: 1.0, ambient: "#d8f0b8", ambientIntensity: 0.36, hemi: 0.55, base: "#4f7a3a", edge: "#3a5c2a" },
       hazards: [
-        { type: "water", min: [-48, -0.9, 8], max: [-28, 0.3, 26], slow: 0.6 },
-        { type: "water", min: [28, -0.9, -26], max: [48, 0.3, -8], slow: 0.6 }
+        { type: "water", min: [-45, -0.9, 8], max: [-26, 0.3, 24], slow: 0.6 },
+        { type: "water", min: [26, -0.9, -24], max: [45, 0.3, -8], slow: 0.6 }
       ],
       swatch: ["#6d8f4a", "#b8a06a", "#2f8fd8"]
     }));
@@ -334,7 +448,7 @@
   (function () {
     var o = {
       id: "neon", name: "Azoteas Neon", tagline: "Rascacielos de colores, pasarelas suspendidas y niebla de medianoche.",
-      size: 104, cell: 11, streetEvery: 2, fill: 0.74, gap: 0.1, minH: 5, maxH: 15,
+      size: 99, cell: 9, streetEvery: 3, fill: 0.72, gap: 0.06, minH: 4, maxH: 13,
       roofDetail: true, stairs: true, stairColor: "#333c58",
       colors: ["#26304a", "#312a4a", "#1f2a3a", "#2d3f5c", "#3a2f55"],
       detail: "#34d6f0",
@@ -350,8 +464,8 @@
       ]
     };
     B.MAPS.push(finish(505, {
-      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(505, o),
-      theme: { sky: "#0b1020", fog: "#131a2c", fogNear: 45, fogFar: 185, sun: "#8fb4ff", sunIntensity: 0.55, ambient: "#4a6ba8", ambientIntensity: 0.3, hemi: 0.4, base: "#1a1f2b", edge: "#2b3444" },
+      id: o.id, name: o.name, tagline: o.tagline, size: o.size, structures: city(505, o), grid: { cell: 9, streetEvery: 3 },
+      theme: { road: "#1f2734", skyTop: "#04060d", sky: "#0b1020", fog: "#131a2c", fogNear: 45, fogFar: 185, sun: "#8fb4ff", sunIntensity: 0.55, ambient: "#4a6ba8", ambientIntensity: 0.3, hemi: 0.4, base: "#1a1f2b", edge: "#2b3444" },
       hazards: [],
       swatch: ["#26304a", "#34d6f0", "#ff4fd8"]
     }));
@@ -380,7 +494,7 @@
     B.MAPS.push(finish(606, {
       id: "islas", name: "Islas Flotantes", tagline: "Plataformas sobre el vacio: un paso en falso y caes fuera de la arena.",
       size: size, structures: out, ground: false, voidY: -17,
-      theme: { sky: "#a8d8f0", fog: "#cfe9f7", fogNear: 70, fogFar: 265, sun: "#ffffff", sunIntensity: 1.1, ambient: "#dff0ff", ambientIntensity: 0.44, hemi: 0.7, base: "#7ab55c", edge: "#6fa04e" },
+      theme: { skyTop: "#4a9fe0", sky: "#a8d8f0", fog: "#cfe9f7", fogNear: 70, fogFar: 265, sun: "#ffffff", sunIntensity: 1.1, ambient: "#dff0ff", ambientIntensity: 0.44, hemi: 0.7, base: "#7ab55c", edge: "#6fa04e" },
       hazards: [], swatch: ["#7ab55c", "#c9a86a", "#a8d8f0"]
     }));
   })();

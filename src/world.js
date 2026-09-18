@@ -70,20 +70,53 @@
     sun.position.set(theme.sunX || 70, theme.sunY || 130, theme.sunZ || 50);
     if (quality && quality.shadows) {
       sun.castShadow = true;
-      sun.shadow.mapSize.set(1024, 1024);
-      var s = (map.size || 96) * 0.62;
+      sun.shadow.mapSize.set(1536, 1536);
+      var s = (map.size || 96) * 0.8;
       sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
       sun.shadow.camera.top = s; sun.shadow.camera.bottom = -s;
-      sun.shadow.camera.near = 1; sun.shadow.camera.far = 360;
-      sun.shadow.bias = -0.0015;
+      sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.035;
     }
     this.group.add(sun);
     this.group.add(sun.target);
 
     this.group.add(new THREE.AmbientLight(new THREE.Color(theme.ambient || "#ffffff"), theme.ambientIntensity == null ? 0.32 : theme.ambientIntensity));
 
+    this.group.add(this._fillLight(theme));
+    this.group.add(this._skyDome(map, theme));
+
     this._build(map, quality);
   }
+
+  /* Luz de relleno frio, opuesta al sol, para dar volumen a los bloques */
+  World.prototype._fillLight = function (theme) {
+    var fill = new THREE.DirectionalLight(new THREE.Color(theme.fill || "#9fc0ff"), theme.fillIntensity == null ? 0.3 : theme.fillIntensity);
+    fill.position.set(-70, 45, -80);
+    return fill;
+  };
+
+  /* Cupula de cielo con degradado vertical */
+  World.prototype._skyDome = function (map, theme) {
+    var c = document.createElement("canvas");
+    c.width = 8;
+    c.height = 256;
+    var g = c.getContext("2d");
+    var grad = g.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, theme.skyTop || theme.sky);
+    grad.addColorStop(0.3, theme.sky);
+    grad.addColorStop(0.5, theme.fog || theme.sky);
+    grad.addColorStop(1, theme.fog || theme.sky);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 8, 256);
+    var tex = new THREE.CanvasTexture(c);
+    var mesh = new THREE.Mesh(
+      new THREE.SphereGeometry((map.size || 96) * 1.7, 24, 16),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, fog: false })
+    );
+    mesh.renderOrder = -1;
+    return mesh;
+  };
 
   World.prototype._build = function (map, quality) {
     var self = this;

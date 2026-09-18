@@ -9,6 +9,10 @@ propios y cinco modos de juego.
 No usa ningun recurso remoto: todo el motor, las fuentes y el audio viajan dentro del
 repositorio, asi que abre incluso sin conexion.
 
+![Partida en tercera persona](docs/captura-partida.png)
+
+![Vista en primera persona con arma y reticula](docs/captura-primera-persona.png)
+
 ## Como abrirlo
 
 **Opcion 1 - abrir el archivo (lo mas rapido)**
@@ -126,12 +130,18 @@ directamente desde el disco sin servidor ni empaquetador.
 npm run check      # Comprueba la sintaxis de todos los modulos
 npm run validate   # Verifica geometria, spawns, rutas y objetivos de los 6 mapas
 npm run simulate   # Ejecuta 6 partidas completas sin navegador y busca excepciones
-npm test           # Las tres cosas
+npm run capture    # Abre el juego en Chrome headless y guarda capturas en docs/
+npm test           # check + validate + simulate
 ```
 
 `tools/simulate.js` sustituye Three.js y el DOM por stubs y corre partidas reales
 (fisica, disparos, IA, modos, HUD) durante decenas de segundos simulados. Es la forma
 mas rapida de detectar una regresion sin abrir el navegador.
+
+`tools/screenshot.js` levanta el servidor local, abre Chrome en modo headless por el
+protocolo de depuracion y guarda cinco vistas (menu, partida, personaje, supervivencia y
+primera persona), ademas de informar de cualquier error de consola. Necesita Chrome o Edge
+instalados y no usa dependencias externas.
 
 ## Como modificar cosas
 

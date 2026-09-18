@@ -45,6 +45,13 @@
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(80, 1, 0.06, 700);
     this.scene.add(this.camera);
+    // Escena superpuesta para el arma en primera persona: nunca queda oculta
+    this.viewScene = new THREE.Scene();
+    this.viewCamera = new THREE.PerspectiveCamera(62, 1, 0.01, 20);
+    this.viewScene.add(new THREE.AmbientLight(new THREE.Color("#ffffff"), 0.8));
+    var vlight = new THREE.DirectionalLight(new THREE.Color("#ffffff"), 0.9);
+    vlight.position.set(-0.5, 1, 0.9);
+    this.viewScene.add(vlight);
     this.renderer = null;
     this.state = "menu";
     this.entities = [];
@@ -73,6 +80,8 @@
 
   Game.prototype.initRenderer = function (canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: "high-performance" });
+    if (THREE.ColorManagement) THREE.ColorManagement.enabled = true;
+    if (THREE.sRGBEncoding !== undefined) this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.applyQuality();
   };
@@ -86,6 +95,8 @@
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    this.viewCamera.aspect = this.camera.aspect;
+    this.viewCamera.updateProjectionMatrix();
   };
 
   Game.prototype.resize = function () {
@@ -93,6 +104,8 @@
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    this.viewCamera.aspect = this.camera.aspect;
+    this.viewCamera.updateProjectionMatrix();
   };
 
   /* ------------------------------- arranque ------------------------------- */
@@ -121,7 +134,7 @@
 
     this.state = "playing";
     B.HUD.setPlaying(true);
-    B.HUD.banner(this.map.name.toUpperCase(), 2.4);
+    B.HUD.banner(this.map.name.toUpperCase(), 2.6, this.mode.name);
     B.Audio.resume();
   };
 
@@ -173,7 +186,14 @@
     }
 
     // Avatar (tercera persona)
-    this.playerAvatar = B.Avatar.build({ team: p.team, hat: "cap" });
+    this.playerAvatar = B.Avatar.build({
+      team: p.team,
+      shirt: p.team === "blue" ? "#4b8dff" : "#ff7a1a",
+      pants: "#2b3444",
+      skin: "#e8b98a",
+      hat: "cap",
+      mood: "happy"
+    });
     this.playerAvatar.group.visible = false;
     this.scene.add(this.playerAvatar.group);
 
@@ -183,18 +203,18 @@
   };
 
   Game.prototype.buildViewmodel = function () {
-    if (this.vmRoot && this.vmRoot.parent) this.camera.remove(this.vmRoot);
+    if (this.vmRoot && this.vmRoot.parent) this.vmRoot.parent.remove(this.vmRoot);
     this.vmRoot = new THREE.Group();
-    this.vmRoot.position.set(0.32, -0.3, -0.55);
-    this.camera.add(this.vmRoot);
+    this.vmRoot.position.set(0.3, -0.28, -0.62);
+    this.viewScene.add(this.vmRoot);
 
     this.muzzleFlash = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22),
       new THREE.MeshBasicMaterial({ color: "#ffe6a0", transparent: true, opacity: 0.95 }));
     this.muzzleFlash.visible = false;
-    this.camera.add(this.muzzleFlash);
+    this.viewScene.add(this.muzzleFlash);
 
     this.muzzleLight = new THREE.PointLight("#ffd27a", 0, 9);
-    this.camera.add(this.muzzleLight);
+    this.viewScene.add(this.muzzleLight);
 
     this.setWeapon(this.player.weapon, true);
   };
@@ -695,7 +715,7 @@
   Game.prototype.syncPlayerAvatar = function (dt) {
     var p = this.player;
     var av = this.playerAvatar;
-    av.group.visible = p.thirdPerson;
+    av.group.visible = p.thirdPerson && p.alive;
     if (!av.group.visible) return;
     av.group.position.set(p.pos.x, p.pos.y, p.pos.z);
     av.group.rotation.y = p.yaw + Math.PI;
@@ -1285,9 +1305,9 @@
     this.vmKick = Math.max(0, (this.vmKick || 0) - dt * 1.6);
     var reloadDip = p.reloading > 0 ? Math.sin(Math.min(1, p.reloading / B.Weapon.byId(p.weapon).reload) * Math.PI) * 0.28 : 0;
 
-    var tx = 0.32 - ads * 0.26 + _swayX;
-    var ty = -0.3 + _swayY + bob - reloadDip - ads * 0.04;
-    var tz = -0.55 + this.vmKick * 0.35 + bob2;
+    var tx = 0.3 - ads * 0.26 + _swayX;
+    var ty = -0.28 + _swayY + bob - reloadDip - ads * 0.04;
+    var tz = -0.62 + this.vmKick * 0.35 + bob2;
 
     this.vmRoot.position.set(tx, ty, tz);
     this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9, ads * 0.02 + _swayY * 0.5, 0);
@@ -1300,7 +1320,16 @@
   };
 
   Game.prototype.render = function () {
-    if (this.renderer) this.renderer.render(this.scene, this.camera);
+    if (!this.renderer) return;
+    this.renderer.autoClear = true;
+    this.renderer.render(this.scene, this.camera);
+    var p = this.player;
+    if (p && !p.thirdPerson && p.alive) {
+      this.renderer.autoClear = false;
+      if (this.renderer.clearDepth) this.renderer.clearDepth();
+      this.renderer.render(this.viewScene, this.viewCamera);
+      this.renderer.autoClear = true;
+    }
   };
 
   B.Game = Game;

@@ -34,8 +34,8 @@
       }
     },
 
-    banner: function (text, dur) {
-      el.centerMsg.textContent = text;
+    banner: function (text, dur, sub) {
+      el.centerMsg.innerHTML = "<b>" + B.esc(text) + "</b>" + (sub ? "<i>" + B.esc(sub) + "</i>" : "");
       el.centerMsg.classList.add("on");
       bannerTimer = dur || 2;
     },
@@ -66,7 +66,7 @@
       li.innerHTML = k + " <i>" + B.esc(weaponName) + "</i> " + v;
       el.killfeed.appendChild(li);
       feedItems.push({ node: li, t: 5.5 });
-      while (feedItems.length > 5) {
+      while (feedItems.length > 4) {
         var old = feedItems.shift();
         if (old.node.parentNode) old.node.parentNode.removeChild(old.node);
       }
@@ -131,11 +131,14 @@
         }
       }
 
+      // El aviso de reaparicion solo debe verse si estas caido
+      if (p.alive) el.respawnBox.hidden = true;
+
       this.renderMinimap(game);
     },
 
     renderMinimap: function (game) {
-      var size = 200;
+      var size = 240;
       var mapSize = game.map.size;
       var s = size / mapSize;
       var cx = size / 2, cz = size / 2;
@@ -143,10 +146,10 @@
       var toZ = function (z) { return cz + z * s; };
 
       mmx.clearRect(0, 0, size, size);
-      mmx.fillStyle = "#0a0d12";
+      mmx.fillStyle = "#141a24";
       mmx.fillRect(0, 0, size, size);
       // cuadricula
-      mmx.strokeStyle = "rgba(48,60,80,0.55)";
+      mmx.strokeStyle = "rgba(58,74,100,0.34)";
       mmx.lineWidth = 1;
       for (var g = -mapSize / 2; g <= mapSize / 2; g += 16) {
         mmx.beginPath(); mmx.moveTo(toX(g), 0); mmx.lineTo(toX(g), size); mmx.stroke();
@@ -155,12 +158,12 @@
 
       // peligros
       game.world.hazards.forEach(function (h) {
-        mmx.fillStyle = h.type === "lava" ? "rgba(255,90,18,0.5)" : "rgba(47,143,216,0.45)";
+        mmx.fillStyle = h.type === "lava" ? "rgba(255,110,40,0.62)" : "rgba(70,170,240,0.55)";
         mmx.fillRect(toX(h.min.x), toZ(h.min.z), (h.max.x - h.min.x) * s, (h.max.z - h.min.z) * s);
       });
 
       // estructuras
-      mmx.fillStyle = "rgba(120,140,170,0.5)";
+      mmx.fillStyle = "rgba(170,190,220,0.72)";
       var fp = game.world.footprints;
       for (var i = 0; i < fp.length; i++) {
         mmx.fillRect(toX(fp[i].x - fp[i].w / 2), toZ(fp[i].z - fp[i].d / 2), fp[i].w * s, fp[i].d * s);
@@ -180,7 +183,7 @@
         if (!e.alive) continue;
         var col = e.isPlayer ? "#e9eef7" : e.team === "red" ? "#ff5252" : e.team === "blue" ? "#4b8dff" : e.kind === "zombie" ? "#8ede5a" : "#ff9a4d";
         mmx.fillStyle = col;
-        var r = e.isPlayer ? 3.4 : 2.6;
+        var r = e.isPlayer ? 3.4 : 3.0;
         mmx.beginPath(); mmx.arc(toX(e.pos.x), toZ(e.pos.z), r, 0, 6.283); mmx.fill();
       }
       // jugador

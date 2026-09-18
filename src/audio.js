@@ -31,7 +31,10 @@
 
   function resume() {
     var c = ensure();
-    if (c && c.state === "suspended") c.resume();
+    if (c && c.state === "suspended") {
+      var p = c.resume();
+      if (p && p.catch) p.catch(function () { /* el navegador exige un gesto del usuario */ });
+    }
   }
 
   function tone(opt) {

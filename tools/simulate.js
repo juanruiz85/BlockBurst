@@ -137,12 +137,15 @@ var THREE = {
   Fog: function (c, n, f) { this.color = c; this.near = n; this.far = f; },
   CanvasTexture: function (c) { this.image = c; this.wrapS = 0; this.wrapT = 0; this.anisotropy = 1; },
   BoxGeometry: Geo, SphereGeometry: Geo, RingGeometry: Geo,
-  PCFSoftShadowMap: 2, RepeatWrapping: 1000, DoubleSide: 2
+  PCFSoftShadowMap: 2, RepeatWrapping: 1000, DoubleSide: 2, BackSide: 1,
+  sRGBEncoding: 3001, ColorManagement: { enabled: false }
 };
 THREE.Scene.prototype = Object.create(Obj3D.prototype);
 THREE.WebGLRenderer = function () {
   this.shadowMap = { enabled: false, type: 0 };
+  this.autoClear = true;
   this.setSize = function () { }; this.setPixelRatio = function () { }; this.render = function () { };
+  this.clearDepth = function () { };
 };
 
 /* ------------------------------- stub del DOM ------------------------------ */
@@ -150,6 +153,7 @@ function Ctx2D() { }
 ["clearRect", "fillRect", "beginPath", "moveTo", "lineTo", "stroke", "fill", "arc", "closePath", "strokeRect", "save", "restore", "translate", "rotate", "scale", "setTransform"].forEach(function (m) { Ctx2D.prototype[m] = function () { }; });
 Ctx2D.prototype.getImageData = function (x, y, w, h) { return { data: new Uint8ClampedArray(Math.max(4, w * h * 4)), width: w, height: h }; };
 Ctx2D.prototype.putImageData = function () { };
+Ctx2D.prototype.createLinearGradient = function () { return { addColorStop: function () { } }; };
 
 function El(tag) {
   this.tagName = tag; this.children = []; this.parentNode = null; this.style = {};

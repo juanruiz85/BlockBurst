@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var B = (window.BLITZ = window.BLITZ || {});
-  B.VERSION = "0.1.0";
+  B.VERSION = "0.1.1";
 
   var DIFFS = [
     { id: "facil", label: "Facil" },
@@ -27,7 +27,7 @@
     mapId: "distrito",
     bots: 8,
     difficulty: "normal",
-    quality: "medio",
+    quality: "alto",
     fov: 80,
     sens: 100,
     volume: 70,
@@ -225,7 +225,7 @@
     var reset = $("btnReset");
     if (reset) reset.addEventListener("click", function () {
       state.sens = 100; state.fov = 80; state.volume = 70; state.bots = 8;
-      state.difficulty = "normal"; state.quality = "medio"; state.name = "Tu";
+      state.difficulty = "normal"; state.quality = "alto"; state.name = "Tu";
       saveSettings(); renderTab();
     });
   }
@@ -425,6 +425,21 @@
     }, 260);
 
     renderTab();
+
+    // Punto de enganche para pruebas automatizadas y capturas
+    window.BLITZ.debug = { game: game, state: state };
+
+    var qs = new URLSearchParams(window.location.search);
+    var auto = qs.get("auto");
+    if (auto && B.modeById(auto)) {
+      state.modeId = auto;
+      if (qs.get("map") && B.mapById(qs.get("map"))) state.mapId = qs.get("map");
+      if (qs.get("bots")) state.bots = Math.max(1, Math.min(16, parseInt(qs.get("bots"), 10) || 8));
+      if (qs.get("diff") && B.Bots.presets[qs.get("diff")]) state.difficulty = qs.get("diff");
+      startMatch(false);
+      if (qs.get("third") && game.player) game.player.thirdPerson = true;
+    }
+
     requestAnimationFrame(frame);
   }
 
