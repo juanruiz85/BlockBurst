@@ -194,6 +194,7 @@ require('../src/weapons.js');
 require('../src/maps.js');
 require('../src/bots.js');
 require('../src/modes.js');
+require('../src/net.js');
 require('../src/hud.js');
 require('../src/game.js');
 
@@ -287,7 +288,71 @@ runMatch("Captura la bandera / Templo", { modeId: "ctf", mapId: "templo", bots: 
 runMatch("Rey de la colina / Islas", { modeId: "koth", mapId: "islas", bots: 8, difficulty: "facil", fov: 80, name: "Tu" }, 45, { weapon: "sniper" });
 runMatch("Todos contra todos / Glaciar", { modeId: "dm", mapId: "glaciar", bots: 10, difficulty: "pesadilla", fov: 80, name: "Tu" }, 40, { weapon: "rocket" });
 
-console.error = origError;
-console.log("\nIncidencias: " + errors.length);
-errors.forEach(function (e) { console.log("  - " + e); });
-process.exit(errors.length ? 1 : 0);
+/* --------------------- protocolo de red (sin WebRTC) --------------------- */
+function netTest() {
+  var host = new B.Game();
+  host.initRenderer(new El("canvas"));
+  host.onFinish = function () { };
+  host.netHost = true;
+  host.start({ modeId: "dm", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Anfitrion" });
+  var rp = host.addRemotePlayer("Invitado");
+
+  // Entrada del invitado: avanzar, mirar, correr y disparar
+  B.Net.applyInput(rp, [0, 1, 1.2, -0.1, 0, 1, 4, 0, 1, 0]);
+  var startX = rp.pos.x, startZ = rp.pos.z;
+  for (var f = 0; f < 90; f++) host.update(1 / 60);
+  var moved = B.dist(startX, startZ, rp.pos.x, rp.pos.z);
+  var movedOk = moved > 1.5;
+  var sane = rp.pos.y > -6 && rp.pos.y < 25 && isFinite(rp.pos.x);
+
+  var snap = B.Net.buildSnapshot(host);
+  var roster = B.Net.buildRoster(host);
+
+  var guest = new B.Game();
+  guest.initRenderer(new El("canvas"));
+  guest.onFinish = function () { };
+  guest.startNet({ modeId: "dm", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Invitado" });
+  B.Net.applyRoster(guest, roster);
+  B.Net.applySnapshot(guest, snap);
+
+  var selfId = guest.player.netId;
+  var selfRow = null;
+  for (var i = 0; i < snap.p.length; i++) if (snap.p[i][0] === selfId) selfRow = snap.p[i];
+  // La municion del invitado debe reflejar la instantanea autoritativa
+  var ammoOk = !selfRow || guest.player.ammo[guest.player.weapon].mag === selfRow[10];
+
+  for (var g = 0; g < 90; g++) guest.update(1 / 60);
+  B.HUD.update(guest, 1 / 60);
+
+  var selfDup = !!guest.netEntities[selfId];
+  var bots = Object.keys(guest.netEntities).length;
+  var botsOk = bots >= 5 && !selfDup;
+  var hudOk = !!(guest.netHud && guest.netHud.mode && guest.hudInfo() === guest.netHud);
+  var remoteOk = Object.keys(guest.netEntities).every(function (k) {
+    var e = guest.netEntities[k];
+    return isFinite(e.pos.x) && isFinite(e.pos.z);
+  });
+
+  var ok = movedOk && sane && botsOk && ammoOk && hudOk && remoteOk;
+  console.log("[" + (ok ? "  OK " : "ERROR") + "] Multijugador: protocolo de red");
+  console.log("        el jugador remoto se movio " + moved.toFixed(1) + " u, y=" + rp.pos.y.toFixed(2) +
+    " | entidades en el invitado: " + bots + " (sin duplicar al local: " + !selfDup + ")" +
+    " | hud del invitado: " + hudOk + " | municion autoritativa: " + ammoOk);
+  if (!ok) errors.push("multijugador: protocolo");
+
+  var sample = "SDP-DE-PRUEBA-" + new Array(500).join("x");
+  return B.Net.codec.encode(sample).then(function (code) {
+    return B.Net.codec.decode(code).then(function (back) {
+      var codecOk = back === sample;
+      console.log("        codec del codigo de sala: " + code.length + " caracteres, ida y vuelta " + (codecOk ? "correcta" : "FALLIDA"));
+      if (!codecOk) errors.push("multijugador: codec");
+    });
+  });
+}
+
+netTest().catch(function (e) { errors.push("multijugador: " + e.message); }).then(function () {
+  console.error = origError;
+  console.log("\nIncidencias: " + errors.length);
+  errors.forEach(function (e) { console.log("  - " + e); });
+  process.exit(errors.length ? 1 : 0);
+});

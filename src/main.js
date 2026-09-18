@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var B = (window.BLITZ = window.BLITZ || {});
-  B.VERSION = "0.1.1";
+  B.VERSION = "0.2.0";
 
   var DIFFS = [
     { id: "facil", label: "Facil" },
@@ -38,6 +38,7 @@
   var el = {};
   var last = 0;
   var started = false;
+  var pendingGuestName = "Invitado";
 
   function $(id) { return document.getElementById(id); }
 
@@ -59,7 +60,7 @@
 
   /* -------------------------------- menus -------------------------------- */
   function renderTabs() {
-    var tabs = [["play", "Jugar"], ["controls", "Controles"], ["settings", "Ajustes"]];
+    var tabs = [["play", "Jugar"], ["multi", "Multijugador"], ["controls", "Controles"], ["settings", "Ajustes"]];
     el.menuTabs.innerHTML = tabs.map(function (t) {
       return '<button class="tab' + (state.tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>";
     }).join("");
@@ -75,6 +76,7 @@
   function renderTab() {
     renderTabs();
     if (state.tab === "play") el.menuBody.innerHTML = panelPlay();
+    else if (state.tab === "multi") el.menuBody.innerHTML = panelMulti();
     else if (state.tab === "controls") el.menuBody.innerHTML = panelControls();
     else el.menuBody.innerHTML = panelSettings();
     wire();
@@ -129,6 +131,60 @@
           "</div>" +
         "</aside>" +
       "</div>";
+  }
+
+  function panelMulti() {
+    var mode = B.modeById(state.modeId);
+    var map = B.mapById(state.mapId);
+    return '<div class="rowsplit"><div>' +
+      '<h3 class="sectionTitle">Jugar con otra persona</h3>' +
+      '<div class="panel" style="padding:16px;display:grid;gap:12px">' +
+        '<div class="netState" id="netState"><i></i><span id="netStateText" class="mono">Sin conexion</span></div>' +
+        '<h4 style="margin:4px 0 0;font-size:14px;letter-spacing:0.1em">ANFITRION</h4>' +
+        '<ol class="steps">' +
+          '<li>Pulsa <b>Crear sala</b> y espera el codigo.</li>' +
+          '<li>Pasale ese <b>codigo</b> a la otra persona.</li>' +
+          '<li>Pega abajo la <b>respuesta</b> que te devuelva y pulsa <b>Conectar</b>.</li>' +
+          '<li>La partida arranca sola con el modo y el mapa elegidos en la pestana Jugar.</li>' +
+        '</ol>' +
+        '<button id="btnHost" class="btn primary">CREAR SALA</button>' +
+        '<textarea id="netHostCode" class="netCode" readonly placeholder="Tu codigo de sala aparecera aqui"></textarea>' +
+        '<label class="field"><span>Respuesta del invitado</span><textarea id="netAnswer" class="netCode" placeholder="Pega aqui la respuesta que te envien"></textarea></label>' +
+        '<button id="btnHostConnect" class="btn">CONECTAR</button>' +
+      '</div>' +
+      '<div class="panel" style="padding:16px;display:grid;gap:12px;margin-top:16px">' +
+        '<h4 style="margin:0;font-size:14px;letter-spacing:0.1em">INVITADO</h4>' +
+        '<ol class="steps">' +
+          '<li>Pega el <b>codigo de sala</b> que te pasen.</li>' +
+          '<li>Pulsa <b>Generar respuesta</b>.</li>' +
+          '<li>Envia esa respuesta al anfitrion. Cuando la acepte, entras a la partida.</li>' +
+        '</ol>' +
+        '<label class="field"><span>Codigo de sala</span><textarea id="netOffer" class="netCode" placeholder="Pega aqui el codigo del anfitrion"></textarea></label>' +
+        '<button id="btnJoin" class="btn primary">GENERAR RESPUESTA</button>' +
+        '<textarea id="netReply" class="netCode" readonly placeholder="Tu respuesta aparecera aqui"></textarea>' +
+      '</div>' +
+    '</div><aside class="side">' +
+      '<div class="panel" style="padding:16px">' +
+        '<h3 class="sectionTitle">Sala actual</h3>' +
+        '<ul class="summaryList">' +
+          '<li><span>Modo</span><b>' + B.esc(mode.name) + '</b></li>' +
+          '<li><span>Mapa</span><b>' + B.esc(map.name) + '</b></li>' +
+          '<li><span>Bots</span><b>' + state.bots + '</b></li>' +
+          '<li><span>Dificultad</span><b>' + B.esc(labelOf(DIFFS, state.difficulty)) + '</b></li>' +
+        '</ul>' +
+        '<p class="dim" style="font-size:13px;margin:12px 0 0">Cambia el modo y el mapa en la pestana <b>Jugar</b>; la sala usa esa seleccion.</p>' +
+      '</div>' +
+      '<div class="panel" style="padding:16px">' +
+        '<h3 class="sectionTitle">Como funciona</h3>' +
+        '<ul class="tips">' +
+          '<li>Conexion <b>directa entre los dos navegadores</b> (WebRTC): no hay servidor intermedio ni cuentas.</li>' +
+          '<li>El <b>anfitrion</b> simula la partida, manda los bots y decide los impactos; el invitado predice su movimiento para que se sienta fluido.</li>' +
+          '<li>Los codigos son largos porque llevan la negociacion cifrada del enlace.</li>' +
+          '<li>Si una red es muy restrictiva (NAT simetrico sin salida), el enlace puede no cuajar: cambia de red o intercambia quien crea la sala.</li>' +
+          '<li>En modos por equipos, los dos jugadores van al <b>mismo bando</b> contra los bots.</li>' +
+        '</ul>' +
+      '</div>' +
+    '</aside></div>';
   }
 
   function panelControls() {
@@ -228,6 +284,124 @@
       state.difficulty = "normal"; state.quality = "alto"; state.name = "Tu";
       saveSettings(); renderTab();
     });
+
+    var bh = $("btnHost"); if (bh) bh.addEventListener("click", netHostCreate);
+    var bc = $("btnHostConnect"); if (bc) bc.addEventListener("click", netHostAccept);
+    var bj = $("btnJoin"); if (bj) bj.addEventListener("click", netJoin);
+  }
+
+  /* ----------------------------- multijugador ----------------------------- */
+  function netState(kind, text) {
+    var s = $("netState"), t = $("netStateText");
+    if (!s || !t) return;
+    s.className = "netState" + (kind ? " " + kind : "");
+    t.textContent = text;
+  }
+
+  function netHostCreate() {
+    B.Audio.ui();
+    netState("warn", "Generando el codigo de sala...");
+    B.Net.host(function (st) {
+      if (st === "connected") onHostConnected();
+      else if (st === "failed") netState("bad", "La red rechazo la conexion. Prueba otra vez o desde otra red.");
+    }).then(function (code) {
+      var box = $("netHostCode");
+      if (box) box.value = code;
+      netState("warn", "Codigo listo. Pasaselo al invitado y pega abajo su respuesta.");
+    }).catch(function (e) {
+      netState("bad", "No se pudo crear la sala: " + e.message);
+    });
+  }
+
+  function netHostAccept() {
+    var box = $("netAnswer");
+    var code = box ? box.value.trim() : "";
+    if (!code) { netState("bad", "Pega primero la respuesta del invitado."); return; }
+    netState("warn", "Conectando con el invitado...");
+    B.Net.acceptAnswer(code).catch(function (e) {
+      netState("bad", "No se pudo conectar: " + e.message);
+    });
+  }
+
+  function netJoin() {
+    var box = $("netOffer");
+    var code = box ? box.value.trim() : "";
+    if (!code) { netState("bad", "Pega primero el codigo de sala."); return; }
+    B.Audio.ui();
+    netState("warn", "Generando tu respuesta...");
+    B.Net.join(code, function (st) {
+      if (st === "connected") {
+        B.Net.sendRel("hi", { name: state.name });
+        netState("warn", "Conectado. Esperando a que el anfitrion acepte...");
+      } else if (st === "failed") {
+        netState("bad", "La red rechazo la conexion. Prueba otra vez o desde otra red.");
+      }
+    }).then(function (reply) {
+      var out = $("netReply");
+      if (out) out.value = reply;
+      netState("warn", "Copia esa respuesta y enviasela al anfitrion.");
+    }).catch(function (e) {
+      netState("bad", "Codigo no valido: " + e.message);
+    });
+  }
+
+  function onHostConnected() {
+    netState("ok", "Conectado. Empezando la partida...");
+    hideMenu();
+    show("results", false);
+    game.settings.quality = currentQuality();
+    game.applyQuality();
+    game.netHost = true;
+    game.start({
+      modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+      difficulty: state.difficulty, fov: state.fov, name: state.name
+    });
+    game.addRemotePlayer(pendingGuestName);
+    B.Net.sendRel("go", {
+      modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+      difficulty: state.difficulty, name: state.name
+    });
+    B.Audio.setVolume(state.volume / 100);
+  }
+
+  function onGuestGo(cfg) {
+    if (!cfg) return;
+    state.modeId = cfg.modeId || state.modeId;
+    state.mapId = cfg.mapId || state.mapId;
+    state.bots = cfg.bots == null ? state.bots : cfg.bots;
+    state.difficulty = cfg.difficulty || state.difficulty;
+    hideMenu();
+    show("results", false);
+    game.settings.quality = currentQuality();
+    game.applyQuality();
+    game.startNet({
+      modeId: state.modeId, mapId: state.mapId, bots: state.bots,
+      difficulty: state.difficulty, fov: state.fov, name: state.name
+    });
+    B.Audio.setVolume(state.volume / 100);
+  }
+
+  function registerNetHandlers() {
+    B.Net.on("hi", function (d) {
+      pendingGuestName = (d && d.name) ? d.name : "Invitado";
+      if (game.netHost && !game.remotePlayer) game.addRemotePlayer(pendingGuestName);
+    });
+    B.Net.on("in", function (d) {
+      if (game.remotePlayer) B.Net.applyInput(game.remotePlayer, d);
+    });
+    B.Net.on("sn", function (d) {
+      if (game.netClient) B.Net.applySnapshot(game, d);
+    });
+    B.Net.on("ro", function (d) {
+      if (game.netClient) B.Net.applyRoster(game, d);
+    });
+    B.Net.on("go", function (d) { onGuestGo(d); });
+    B.Net.on("fin", function (d) {
+      if (game.netClient && !game.finished) {
+        var w = d && d.winner;
+        game.finish(w === "red" || w === "blue" ? w : null);
+      }
+    });
   }
 
   function bindSlider(id, valId, key, apply) {
@@ -284,8 +458,12 @@
     show("results", false);
     B.HUD.setPlaying(false);
     game.state = "menu";
+    game.netHost = false;
+    game.netClient = false;
+    B.Net.close();
     game.teardown();
     showMenu();
+    renderTab();
   }
 
   function onFinish(res) {
@@ -389,6 +567,7 @@
     B.Audio.setEnabled(true);
 
     game.onFinish = onFinish;
+    registerNetHandlers();
 
     B.Input.onKey(function (code) {
       if (code === "Escape" && game.state === "playing") pauseGame();

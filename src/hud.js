@@ -16,7 +16,7 @@
         "healthNum", "healthFill", "armorNum", "armorFill", "weaponName", "ammoMag", "ammoReserve",
         "weaponSlots", "crosshair", "hitmarker", "damageVignette", "healVignette", "centerMsg",
         "pickupToast", "respawnBox", "respawnTime", "btnRespawn", "respawnHint",
-        "scoreboard", "sbTitle", "sbBody"].forEach(function (id) { el[id] = $(id); });
+        "scoreboard", "sbTitle", "sbBody", "netStatus"].forEach(function (id) { el[id] = $(id); });
       mm = el.minimap;
       mmx = mm.getContext("2d");
     },
@@ -109,12 +109,20 @@
       el.weaponSlots.innerHTML = game.slotSummary();
 
       // Objetivo
-      var hud = game.mode.hud(game);
+      var hud = game.hudInfo();
       el.objMode.textContent = hud.mode;
       el.objTimer.textContent = typeof hud.timer === "number" ? B.formatTime(hud.timer) : hud.timer;
       el.objScore.textContent = hud.score;
       el.modeHint.textContent = hud.hint;
       el.minimapName.textContent = game.map.name.toUpperCase();
+
+      if (B.Net && B.Net.active) {
+        el.netStatus.hidden = false;
+        el.netStatus.textContent = B.Net.status();
+        el.netStatus.classList.toggle("ok", B.Net.connected);
+      } else {
+        el.netStatus.hidden = true;
+      }
 
       // Temporizadores de efectos
       if (bannerTimer > 0) { bannerTimer -= dt; if (bannerTimer <= 0) el.centerMsg.classList.remove("on"); }

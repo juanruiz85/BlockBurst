@@ -31,6 +31,39 @@ Y entra en la direccion que imprime la consola.
 
 **Requisitos:** un navegador con WebGL y raton. No hay build, no hay `npm install`.
 
+## Jugar publicado
+
+- **GitHub Pages:** <https://juanruiz85.github.io/BlockBurst/> (el repositorio es publico y el
+  sitio se sirve estatico desde la rama `main`).
+- **Un solo archivo:** `npm run build:single` genera `dist/BlockBurst.html`, un HTML
+  autocontenido de menos de 1 MB con el motor, las fuentes y el codigo dentro. Se puede
+  abrir con doble clic o subir a cualquier hosting de artefactos, por ejemplo la opcion de
+  publicar de space-z.ai.
+
+## Multijugador
+
+Se juega de dos en dos por conexion directa entre los navegadores (WebRTC). No hay
+servidor intermedio ni cuentas: los dos jugadores intercambian una vez dos codigos de
+texto y a partir de ahi hablan entre ellos.
+
+| Paso | Anfitrion | Invitado |
+|---|---|---|
+| 1 | Pestana Multijugador, pulsa **Crear sala** | |
+| 2 | Envia su **codigo de sala** al invitado | Pega el codigo y pulsa **Generar respuesta** |
+| 3 | Pega la **respuesta** y pulsa **Conectar** | Envia su respuesta al anfitrion |
+| 4 | La partida arranca sola | Entra a la partida automaticamente |
+
+Detalles utiles:
+
+- El **anfitrion** simula todo (jugadores, bots, modos) y decide los impactos. El invitado
+  envia su entrada 30 veces por segundo, predice su propio movimiento y recibe instantaneas
+  20 veces por segundo, que se interpolan para que se vea fluido.
+- El modo y el mapa son los elegidos en la pestana **Jugar**; en los modos por equipos los
+  dos jugadores van al **mismo bando** contra los bots.
+- Los codigos son largos porque contienen la negociacion cifrada del enlace.
+- Si una red es muy restrictiva (NAT simetrico sin salida UDP), el enlace puede no cuajar:
+  cambia de red o intercambia quien crea la sala. No hay servidor de retransmision.
+
 ## Controles
 
 | Accion | Tecla |
@@ -127,11 +160,13 @@ directamente desde el disco sin servidor ni empaquetador.
 ## Desarrollo y verificacion
 
 ```bash
-npm run check      # Comprueba la sintaxis de todos los modulos
-npm run validate   # Verifica geometria, spawns, rutas y objetivos de los 6 mapas
-npm run simulate   # Ejecuta 6 partidas completas sin navegador y busca excepciones
-npm run capture    # Abre el juego en Chrome headless y guarda capturas en docs/
-npm test           # check + validate + simulate
+npm run check        # Comprueba la sintaxis de todos los modulos
+npm run validate     # Verifica geometria, spawns, rutas y objetivos de los 6 mapas
+npm run simulate     # Ejecuta 6 partidas completas sin navegador y prueba el protocolo de red
+npm run build:single # Genera dist/BlockBurst.html (un solo archivo autocontenido)
+npm run capture      # Abre el juego en Chrome headless y guarda capturas en docs/
+npm run nettest      # Abre DOS navegadores y verifica el multijugador de extremo a extremo
+npm test             # check + validate + simulate + build:single
 ```
 
 `tools/simulate.js` sustituye Three.js y el DOM por stubs y corre partidas reales

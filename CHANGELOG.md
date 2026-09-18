@@ -1,5 +1,33 @@
 # Historial de cambios
 
+## v0.2.0 - Multijugador y publicacion web
+
+### Multijugador (nuevo)
+- Partida de dos jugadores por conexion directa entre navegadores (WebRTC), sin servidor
+  intermedio y sin cuentas. Se enlaza con dos codigos de texto que se intercambian una vez.
+- Autoridad en el anfitrion: el simula la partida, manda los bots y decide los impactos.
+  El invitado envia su entrada a 30 Hz, predice su propio movimiento y recibe instantaneas
+  a 20 Hz con interpolacion, de modo que el movimiento se siente fluido.
+- Canal rapido sin garantias para entradas e instantaneas y canal fiable para el inicio y
+  los avisos, con cola de salida para no perder mensajes mientras el enlace abre.
+- Pestana Multijugador en el menu, con los dos flujos (crear sala / unirse), estado de la
+  conexion en el HUD y latencia.
+- En los modos por equipos los dos jugadores van al mismo bando contra los bots.
+
+### Publicacion
+- El juego es estatico, asi que funciona en GitHub Pages sin ningun servidor.
+- `tools/build-single.js` empaqueta todo (motor, fuentes, estilos y codigo) en un unico
+  `dist/BlockBurst.html` de menos de 1 MB, listo para subir como artefacto a cualquier
+  hosting que acepte un solo HTML (por ejemplo la opcion de publicar de space-z.ai).
+- `.nojekyll` para que Pages sirva el contenido tal cual.
+
+### Herramientas
+- `tools/nettest.js`: abre dos navegadores reales, hace el intercambio de codigos con la
+  interfaz real y comprueba que se conectan y que el invitado recibe el mundo.
+- `tools/screenshot.js` admite ahora capturar un unico archivo indicando su ruta.
+- `tools/simulate.js` incluye una prueba del protocolo de red sin navegador (entrada,
+  instantanea, plantilla y codec de los codigos de sala).
+
 ## v0.1.1 - Pulido visual y herramientas de verificacion
 
 ### Visual

@@ -1,0 +1,324 @@
+/* BLOCKBURST - multijugador peer to peer sobre WebRTC.
+   No necesita servidor: el anfitrion y el invitado intercambian un codigo de texto
+   (oferta y respuesta) y a partir de ahi hablan directo. Asi el juego sigue siendo
+   estatico y se puede publicar en GitHub Pages o en cualquier hosting de archivos.
+
+   Diseno: autoridad en el anfitrion.
+   - El anfitrion simula todo (jugadores, bots, modos) y envia instantaneas.
+   - El invitado envia su entrada y predice su propio movimiento en local; las
+     instantaneas corrigen su posicion y le dan el resto del mundo.
+
+   El protocolo (serializar / aplicar) es independiente del transporte, de modo que
+   se puede probar sin navegador (ver tools/simulate.js). */
+(function () {
+  'use strict';
+  var B = (window.BLITZ = window.BLITZ || {});
+
+  var STUN = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun.cloudflare.com:3478" }
+  ];
+  var FAST_HZ = 20;      // instantaneas por segundo (canal no fiable)
+  var INPUT_HZ = 30;     // entradas por segundo (canal no fiable)
+  var ROSTER_MS = 2000;  // reenvio de la plantilla de jugadores
+
+  function q(v, d) { var f = Math.pow(10, d == null ? 2 : d); return Math.round(v * f) / f; }
+  function now() { return Date.now(); }
+
+  /* ------------------------------ codificacion ----------------------------- */
+  function pack(bytes) {
+    var s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function unpack(str) {
+    var s = String(str).trim().replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    var bin = atob(s);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function encode(text) {
+    var data = new TextEncoder().encode(text);
+    if (typeof CompressionStream === "function") {
+      return new Response(new Blob([data]).stream().pipeThrough(new CompressionStream("deflate-raw")))
+        .arrayBuffer()
+        .then(function (buf) { return "1" + pack(new Uint8Array(buf)); })
+        .catch(function () { return "0" + pack(data); });
+    }
+    return Promise.resolve("0" + pack(data));
+  }
+  function decode(code) {
+    var body = String(code).trim();
+    var flag = body.charAt(0);
+    var bytes = unpack(body.slice(1));
+    if (flag === "1" && typeof DecompressionStream === "function") {
+      return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")))
+        .arrayBuffer()
+        .then(function (buf) { return new TextDecoder().decode(new Uint8Array(buf)); });
+    }
+    return Promise.resolve(new TextDecoder().decode(bytes));
+  }
+
+  function waitIce(pc) {
+    return new Promise(function (resolve) {
+      if (pc.iceGatheringState === "complete") return resolve();
+      var done = false;
+      var finish = function () { if (!done) { done = true; resolve(); } };
+      pc.addEventListener("icegatheringstatechange", function () {
+        if (pc.iceGatheringState === "complete") finish();
+      });
+      setTimeout(finish, 4000);
+    });
+  }
+
+  var Net = {
+    name: "blockburst-p2p",
+
+    active: false,
+    role: null,          // "host" | "guest"
+    connected: false,
+    ping: 0,
+    lastError: "",
+    guestName: "Invitado",
+    hostName: "Anfitrion",
+    FAST_HZ: FAST_HZ,
+    INPUT_HZ: INPUT_HZ,
+    link: null,
+    handlers: {},
+
+    /* ------------------------------- protocolo ------------------------------- */
+
+    buildInput: function (game) {
+      var p = game.player;
+      var a = game.netInputAxis || { x: 0, z: 0 };
+      return [
+        q(a.x, 2), q(a.z, 2),
+        q(p.yaw, 3), q(p.pitch, 3),
+        (game.netWantJump ? 1 : 0),
+        (game.netFiring ? 1 : 0),
+        B.Weapon.byId(p.weapon).slot,
+        (game.netReload ? 1 : 0),
+        (game.netRun ? 1 : 0),
+        (game.netCrouch ? 1 : 0)
+      ];
+    },
+
+    applyInput: function (remote, input) {
+      if (!remote || !input) return;
+      remote.netInputAxis = { x: input[0], z: input[1] };
+      remote.yaw = input[2];
+      remote.pitch = input[3];
+      remote.netWantJump = input[4] === 1;
+      remote.netFiring = input[5] === 1;
+      var w = B.WEAPONS[input[6] - 1];
+      if (w && remote.weapon !== w.id) { remote.weapon = w.id; remote.reloading = 0; }
+      remote.netReload = input[7] === 1;
+      remote.netRun = input[8] === 1;
+      remote.netCrouch = input[9] === 1;
+    },
+
+    buildRoster: function (game) {
+      return game.entities.map(function (e) {
+        return [e.netId, e.name, e.team || 0, e.isBot ? 1 : 0, e.kind || "soldier"];
+      });
+    },
+
+    buildSnapshot: function (game) {
+      var players = [];
+      for (var i = 0; i < game.entities.length; i++) {
+        var e = game.entities[i];
+        if (e.netId == null) continue;
+        var st = (!e.isBot && e.ammo) ? e.ammo[e.weapon] : null;
+        players.push([
+          e.netId, q(e.pos.x), q(e.pos.y), q(e.pos.z), q(e.yaw, 3), q(e.pitch || 0, 3),
+          Math.round(e.health), Math.round(e.armor || 0), e.alive ? 1 : 0,
+          B.Weapon.byId(e.weapon).slot,
+          st ? st.mag : 0, st ? st.reserve : 0,
+          e.kills, e.deaths, Math.round(e.score * 10) / 10,
+          e.carrying ? 1 : 0
+        ]);
+      }
+      var ev = game.netEvents ? game.netEvents.splice(0, game.netEvents.length) : [];
+      return { len: game.entities.length, t: q(game.elapsed, 2), m: game.hudInfo(), p: players, ev: ev };
+    },
+
+    applySnapshot: function (game, snap) {
+      if (!snap || !snap.p) return;
+      game.netHud = snap.m;
+      for (var i = 0; i < snap.p.length; i++) {
+        var row = snap.p[i];
+        var ent = game.netEntities[row[0]];
+        if (!ent && game.player && row[0] === game.player.netId) {
+          game.applySelfSnapshot(row);
+          continue;
+        }
+        if (!ent) ent = game.spawnNetEntity(row[0]);
+        ent.netTarget = { x: row[1], y: row[2], z: row[3], yaw: row[4], pitch: row[5] };
+        ent.health = row[6];
+        ent.armor = row[7];
+        var alive = row[8] === 1;
+        if (ent.alive !== alive) {
+          ent.alive = alive;
+          if (ent.group) ent.group.visible = alive;
+          if (ent.avatar && ent.avatar.group) ent.avatar.group.visible = alive;
+        }
+        var w = B.WEAPONS[row[9] - 1];
+        if (w) ent.weapon = w.id;
+        ent.netMag = row[10];
+        ent.netReserve = row[11];
+        ent.kills = row[12];
+        ent.deaths = row[13];
+        ent.score = row[14];
+        ent.carrying = row[15] === 1;
+      }
+      if (snap.ev) for (var k = 0; k < snap.ev.length; k++) game.applyNetEvent(snap.ev[k]);
+    },
+
+    applyRoster: function (game, roster) {
+      if (!roster) return;
+      for (var i = 0; i < roster.length; i++) {
+        var r = roster[i];
+        if (game.netClient && game.player && r[0] === game.player.netId) continue;
+        var ent = game.netEntities[r[0]] || game.spawnNetEntity(r[0]);
+        ent.name = r[1];
+        ent.team = r[2] || null;
+        ent.isBot = r[3] === 1;
+        ent.kind = r[4];
+      }
+    },
+
+    /* --------------------------- enlace WebRTC --------------------------- */
+
+    host: function (onStatus) {
+      var self = this;
+      self.role = "host";
+      self.connected = false;
+      self.lastError = "";
+      var pc = new RTCPeerConnection({ iceServers: STUN });
+      var fast = pc.createDataChannel("bb-fast", { ordered: false, maxRetransmits: 0 });
+      var rel = pc.createDataChannel("bb-rel", { ordered: true });
+      self._wire(pc, onStatus, fast, rel);
+      return pc.createOffer()
+        .then(function (off) { return pc.setLocalDescription(off); })
+        .then(function () { return waitIce(pc); })
+        .then(function () { return encode(pc.localDescription.sdp); })
+        .catch(function (e) { self.lastError = e.message; throw e; });
+    },
+
+    join: function (offerCode, onStatus) {
+      var self = this;
+      self.role = "guest";
+      self.connected = false;
+      self.lastError = "";
+      var pc = new RTCPeerConnection({ iceServers: STUN });
+      self._wire(pc, onStatus, null, null);
+      return decode(offerCode)
+        .then(function (sdp) { return pc.setRemoteDescription({ type: "offer", sdp: sdp }); })
+        .then(function () { return pc.createAnswer(); })
+        .then(function (ans) { return pc.setLocalDescription(ans); })
+        .then(function () { return waitIce(pc); })
+        .then(function () { return encode(pc.localDescription.sdp); })
+        .catch(function (e) { self.lastError = e.message; throw e; });
+    },
+
+    acceptAnswer: function (answerCode) {
+      var self = this;
+      if (!self.link || !self.link.pc) return Promise.reject(new Error("no hay oferta activa"));
+      return decode(answerCode).then(function (sdp) {
+        return self.link.pc.setRemoteDescription({ type: "answer", sdp: sdp });
+      });
+    },
+
+    _wire: function (pc, onStatus, fast, rel) {
+      var self = this;
+      var link = { pc: pc, fast: null, rel: null, isHost: self.role === "host" };
+      self.link = link;
+      if (onStatus) self._onStatus = onStatus;
+
+      function ready() {
+        if (link.fast && link.rel &&
+          link.fast.readyState === "open" && link.rel.readyState === "open" && !self.connected) {
+          self.connected = true;
+          self.active = true;
+          if (self._onStatus) self._onStatus("connected");
+        }
+      }
+      function attach(channel) {
+        if (!channel) return;
+        if (channel.label === "bb-fast") link.fast = channel; else link.rel = channel;
+        channel.addEventListener("open", function () { ready(); self._flush(); });
+        channel.addEventListener("message", function (ev) { self._onData(ev.data); });
+        channel.addEventListener("close", function () {
+          self.connected = false;
+          self.active = false;
+          if (self._onStatus) self._onStatus("closed");
+        });
+      }
+
+      if (fast) attach(fast);
+      if (rel) attach(rel);
+      pc.addEventListener("datachannel", function (ev) { attach(ev.channel); ready(); });
+      pc.addEventListener("connectionstatechange", function () {
+        var st = pc.connectionState;
+        if (st === "connected") ready();
+        if ((st === "failed" || st === "disconnected") && self._onStatus) self._onStatus(st);
+      });
+    },
+
+    on: function (type, fn) { this.handlers[type] = fn; },
+    off: function () { this.handlers = {}; },
+
+    _onData: function (raw) {
+      var msg;
+      try { msg = JSON.parse(raw); } catch (e) { return; }
+      if (!msg || !msg.k) return;
+      if (msg.k === "pg") { this.sendRel("po", msg.t); return; }         // ping del invitado
+      if (msg.k === "po") { this.ping = Math.max(1, now() - msg.d); return; } // respuesta del anfitrion
+      var fn = this.handlers[msg.k];
+      if (fn) fn(msg.d, msg.t);
+    },
+
+    _send: function (kind, payload, fast) {
+      var link = this.link;
+      if (!link) return false;
+      var ch = fast ? (link.fast || link.rel) : (link.rel || link.fast);
+      var msg = JSON.stringify({ k: kind, t: now(), d: payload });
+      if (!ch || ch.readyState !== "open") {
+        // Los mensajes fiables se guardan hasta que el canal abra (por ejemplo el inicio)
+        if (!fast) (link.outbox || (link.outbox = [])).push(msg);
+        return false;
+      }
+      try { ch.send(msg); return true; } catch (e) { return false; }
+    },
+
+    _flush: function () {
+      var link = this.link;
+      if (!link || !link.outbox || !link.rel || link.rel.readyState !== "open") return;
+      var q = link.outbox.splice(0, link.outbox.length);
+      for (var i = 0; i < q.length; i++) { try { link.rel.send(q[i]); } catch (e) { } }
+    },
+    sendFast: function (kind, payload) { return this._send(kind, payload, true); },
+    sendRel: function (kind, payload) { return this._send(kind, payload, false); },
+
+    close: function () {
+      if (this.link && this.link.pc) { try { this.link.pc.close(); } catch (e) { } }
+      this.link = null;
+      this.active = false;
+      this.connected = false;
+      this.role = null;
+      this.ping = 0;
+      this.handlers = {};
+    },
+
+    status: function () {
+      if (!this.active) return "SIN CONEXION";
+      return this.connected ? ("EN LINEA  " + this.ping + " ms") : "CONECTANDO...";
+    }
+  };
+
+  B.Net = Net;
+  B.Net.codec = { encode: encode, decode: decode };
+})();

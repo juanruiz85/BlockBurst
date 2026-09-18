@@ -61,6 +61,17 @@
     this.tracers = [];
     this.tracerPool = [];
     this.barrels = [];
+    // Multijugador
+    this.netHost = false;
+    this.netClient = false;
+    this.netEntities = {};
+    this.netEvents = [];
+    this.netHud = null;
+    this.nextNetId = 100;
+    this.netSnapTimer = 0;
+    this.netRosterTimer = 0;
+    this.netInputTimer = 0;
+    this.netInputAxis = { x: 0, z: 0 };
     this.elapsed = 0;
     this.world = null;
     this.map = null;
@@ -130,11 +141,18 @@
     this.buildPlayer(config.name);
 
     this.entities = [this.player];
-    this.mode.setup(this);
+    this.player.netId = this.netClient ? 1 : 0;
+    this.nextNetId = 100;
+    if (this.netClient) {
+      // En el invitado los bots y las reglas llegan desde el anfitrion
+      this.modeObj = null;
+    } else {
+      this.mode.setup(this);
+    }
 
     this.state = "playing";
     B.HUD.setPlaying(true);
-    B.HUD.banner(this.map.name.toUpperCase(), 2.6, this.mode.name);
+    this.netBanner(this.map.name.toUpperCase(), 2.6, this.mode.name);
     B.Audio.resume();
   };
 
@@ -154,6 +172,7 @@
     this.entities = []; this.effects = []; this.pickups = []; this.projectiles = [];
     this.tracerPool = []; this.tracers = [];
     this.barrels = [];
+    this.netEntities = {}; this.netEvents = []; this.netHud = null;
     if (this.playerAvatar && this.playerAvatar.group.parent) this.playerAvatar.group.parent.remove(this.playerAvatar.group);
     this.player = null;
   };
@@ -259,9 +278,9 @@
 
   /* ------------------------------- entidades ------------------------------ */
   Game.prototype.spawnBots = function (count, team, kind) {
-    var self = this;
     for (var i = 0; i < count; i++) {
       var bot = B.Bots.create(this, { team: team, kind: kind, difficulty: this.settings.difficulty });
+      bot.netId = this.nextNetId++;
       this.entities.push(bot);
     }
   };
@@ -580,6 +599,10 @@
     var kTeam = realKiller ? realKiller.team : null;
     B.HUD.pushKill(kName, kTeam, info.weapon || "?", victim.name, victim.team,
       !!(realKiller && realKiller.isPlayer) || victim.isPlayer);
+    if (this.netHost) {
+      this.netEvents.push(["kf", kName, kTeam || 0, info.weapon || "?", victim.name, victim.team || 0,
+        (realKiller && realKiller.isPlayer) || victim.isPlayer ? 1 : 0]);
+    }
 
     if (victim.carrying) this.dropFlag(victim);
     this.mode.onKill(this, realKiller, victim);
@@ -621,15 +644,21 @@
     this.elapsed += dt;
     this.world.update(dt);
     this.updatePlayer(dt);
-    this.updateBots(dt);
+    if (this.netClient) {
+      this.updateNetClient(dt);
+    } else {
+      this.updateBots(dt);
+      if (this.netHost) this.updateRemotePlayers(dt);
+    }
     this.updateProjectiles(dt);
     this.updatePickups(dt);
     this.updateEffects(dt);
     this.updateTracers(dt);
-    if (this.mode.update) this.mode.update(this, dt);
-    this.checkEnd();
+    if (!this.netClient && this.mode.update) this.mode.update(this, dt);
+    if (!this.netClient) this.checkEnd();
     this.updateCamera(dt);
     this.updateViewModel(dt);
+    if (this.netHost) this.hostNetTick(dt);
   };
 
   Game.prototype.updatePlayer = function (dt) {
@@ -642,9 +671,11 @@
     p.goldTimer = Math.max(0, p.goldTimer - dt);
 
     if (!p.alive) {
-      p.respawnTimer -= dt;
-      B.HUD.showRespawn(true, p.respawnTimer);
-      if (p.respawnTimer <= 0 || I.once("Space")) this.respawnPlayer();
+      if (!this.netClient) {
+        p.respawnTimer -= dt;
+        B.HUD.showRespawn(true, p.respawnTimer);
+        if (p.respawnTimer <= 0 || I.once("Space")) this.respawnPlayer();
+      }
       // caida libre del cuerpo
       this.moveCombatant(p, 0, 0, dt, false);
       this.syncPlayerAvatar(dt);
@@ -682,20 +713,29 @@
     var vz = ice ? p.vel.z : wishZ * speed;
 
     var wantJump = I.down("Space");
+    this.netInputAxis = axis;
+    this.netWantJump = wantJump;
+    this.netRun = running;
+    this.netCrouch = crouching;
+    this.netFiring = I.mouse(0);
+    this.netReload = I.down("KeyR");
     this.moveCombatant(p, ice ? vx : vx, vz, dt, wantJump);
 
     var hazard = this.world.hazardAt(p.pos.x, p.pos.y + 0.4, p.pos.z);
     if (hazard) {
       if (hazard.type === "lava") {
-        this.dealDamage(p, hazard.dmg * dt, null, { weapon: "lava" });
+        if (!this.netClient) this.dealDamage(p, hazard.dmg * dt, null, { weapon: "lava" });
       } else if (hazard.type === "water") {
         p.vel.x *= 0.6; p.vel.z *= 0.6;
       }
     }
     if (p.pos.y < this.world.bounds.voidY) {
-      p.health = 0;
-      this.killEntity(p, null, { weapon: "el vacio" });
-      p.respawnTimer = 2.6;
+      if (this.netClient) { p.pos.y = 0.2; }
+      else {
+        p.health = 0;
+        this.killEntity(p, null, { weapon: "el vacio" });
+        p.respawnTimer = 2.6;
+      }
       return;
     }
 
@@ -746,7 +786,7 @@
 
     if (def.kind === "melee") {
       B.Audio.melee();
-      this.meleeAttack(p, def);
+      if (!this.netClient) this.meleeAttack(p, def);
       p.cooldown = 60 / def.rpm;
       this.vmKick = 0.18;
       return;
@@ -771,7 +811,9 @@
     var origin = new THREE.Vector3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
     var dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
 
-    if (def.kind === "projectile") {
+    if (this.netClient) {
+      // Los impactos los decide el anfitrion; aqui solo se muestra el efecto local
+    } else if (def.kind === "projectile") {
       this.spawnRocket(p, def, origin, dir);
     } else {
       this.hitscanShot(p, def, origin, dir, { damageMul: 1, spreadDeg: spread, tracer: true });
@@ -1135,12 +1177,13 @@
     var count = Math.min(20, 3 + Math.round(this.wave * 1.55));
     for (var i = 0; i < count; i++) {
       var z = B.Bots.create(this, { kind: "zombie", difficulty: this.settings.difficulty });
+      z.netId = this.nextNetId++;
       z.health = z.maxHealth * (1.6 + this.wave * 0.12);
       z.speed = 4.0 + Math.min(2.6, this.wave * 0.12);
       this.entities.push(z);
     }
     this.waveActive = true;
-    B.HUD.banner("OLEADA " + this.wave, 1.8);
+    this.netBanner("OLEADA " + this.wave, 1.8);
     B.Audio.wave();
   };
 
@@ -1187,6 +1230,10 @@
     B.HUD.setPlaying(false);
     B.Audio.resume();
     if (playerWon) B.Audio.win(); else B.Audio.lose();
+    if (this.netHost) {
+      var tag = typeof winner === "string" ? winner : (winner && winner.isBot ? "bot" : "player");
+      B.Net.sendRel("fin", { winner: tag });
+    }
     if (this.onFinish) this.onFinish({ winner: winner, playerWon: playerWon });
   };
 
@@ -1330,6 +1377,249 @@
       this.renderer.render(this.viewScene, this.viewCamera);
       this.renderer.autoClear = true;
     }
+  };
+
+  /* ------------------------------ multijugador ------------------------------ */
+
+  Game.prototype.banner = function (text, dur, sub) { this.netBanner(text, dur, sub); };
+
+  Game.prototype.hudInfo = function () {
+    if (this.netClient) {
+      return this.netHud || { mode: "MULTIJUGADOR", timer: 0, score: "-", hint: "Conectado al anfitrion" };
+    }
+    return this.mode.hud(this);
+  };
+
+  Game.prototype.dirFromYawPitch = function (yaw, pitch) {
+    var cp = Math.cos(pitch);
+    return new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp).normalize();
+  };
+
+  /* Arranca en modo invitado: el mundo y las reglas llegan del anfitrion */
+  Game.prototype.startNet = function (config) {
+    this.netClient = true;
+    this.start(config);
+    B.HUD.banner(this.map.name.toUpperCase(), 2.6, "MULTIJUGADOR");
+  };
+
+  Game.prototype.buildRemotePlayer = function (name) {
+    var team = this.mode.teams ? this.player.team : null;
+    var av = B.Avatar.build({
+      team: team || "blue",
+      shirt: team === "blue" ? "#4b8dff" : team === "red" ? "#ff7a1a" : "#4b8dff",
+      pants: "#2b3444", skin: "#e8b98a", hat: "cap", mood: "happy"
+    });
+    this.scene.add(av.group);
+    var ent = {
+      netRemote: true, isBot: false, isPlayer: false, netId: 1, name: name || "Invitado",
+      team: team, kind: "soldier",
+      pos: { x: 0, y: 0.12, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
+      radius: 0.42, height: 1.9, eye: 1.62, grounded: true, jumpCooldown: 0,
+      health: 100, maxHealth: 100, armor: 50, alive: true, invuln: 0,
+      moveSpeed: 6.3, runMul: 1.42, crouchMul: 0.5,
+      weapon: "pistol", ammo: {}, cooldown: 0, reloading: 0, shots: 0, shotTimer: 0,
+      kills: 0, deaths: 0, score: 0, respawnTimer: 0, carrying: null,
+      avatar: av, group: av.group, netInputAxis: { x: 0, z: 0 }
+    };
+    B.WEAPONS.forEach(function (w) { ent.ammo[w.id] = { mag: w.mag, reserve: w.reserve }; });
+    ent.ammo.pistol.reserve = 999;
+    var sp = B.Bots.spawnPointFor(this, ent.team);
+    ent.pos.x = sp[0]; ent.pos.z = sp[1]; ent.pos.y = (sp[2] || 0) + 0.08;
+    ent.group.position.set(ent.pos.x, ent.pos.y, ent.pos.z);
+    return ent;
+  };
+
+  Game.prototype.addRemotePlayer = function (name) {
+    if (this.remotePlayer) return this.remotePlayer;
+    this.remotePlayer = this.buildRemotePlayer(name);
+    this.entities.push(this.remotePlayer);
+    return this.remotePlayer;
+  };
+
+  /* En el anfitrion, el jugador remoto es una entidad normal movida por su entrada */
+  Game.prototype.updateRemotePlayers = function (dt) {
+    var rp = this.remotePlayer;
+    if (!rp) return;
+    if (!rp.alive) {
+      rp.respawnTimer -= dt;
+      if (rp.respawnTimer <= 0) {
+        var sp = B.Bots.spawnPointFor(this, rp.team);
+        rp.pos.x = sp[0]; rp.pos.z = sp[1]; rp.pos.y = (sp[2] || 0) + 0.08;
+        rp.vel.x = rp.vel.y = rp.vel.z = 0;
+        rp.health = rp.maxHealth; rp.armor = 50; rp.alive = true; rp.invuln = 1.6;
+        rp.ammo.pistol.reserve = 999;
+        if (rp.group) rp.group.visible = true;
+        B.Audio.spawn();
+      } else {
+        this.moveCombatant(rp, 0, 0, dt, false);
+      }
+      return;
+    }
+    var axis = rp.netInputAxis || { x: 0, z: 0 };
+    var speed = rp.moveSpeed * (rp.netRun ? rp.runMul : 1) * (rp.netCrouch ? rp.crouchMul : 1);
+    var fwd = { x: -Math.sin(rp.yaw), z: -Math.cos(rp.yaw) };
+    var right = { x: Math.cos(rp.yaw), z: -Math.sin(rp.yaw) };
+    var vx = (fwd.x * axis.z + right.x * axis.x) * speed;
+    var vz = (fwd.z * axis.z + right.z * axis.x) * speed;
+    this.moveCombatant(rp, vx, vz, dt, rp.netWantJump);
+
+    var hazard = this.world.hazardAt(rp.pos.x, rp.pos.y + 0.4, rp.pos.z);
+    if (hazard && hazard.type === "lava") this.dealDamage(rp, hazard.dmg * dt, null, { weapon: "lava" });
+    if (rp.pos.y < this.world.bounds.voidY) this.killEntity(rp, null, { weapon: "el vacio" });
+
+    rp.cooldown = Math.max(0, rp.cooldown - dt);
+    if (rp.reloading > 0) {
+      rp.reloading -= dt;
+      if (rp.reloading <= 0) {
+        var def = B.Weapon.byId(rp.weapon);
+        var st = rp.ammo[rp.weapon];
+        var take = Math.min(def.mag - st.mag, st.reserve);
+        st.mag += take; st.reserve -= take;
+      }
+    } else if (rp.netReload) {
+      this.tryReload(rp);
+    }
+    if (rp.netFiring) this.tryFire(rp);
+
+    if (rp.group) { rp.group.position.set(rp.pos.x, rp.pos.y, rp.pos.z); rp.group.rotation.y = rp.yaw; }
+    if (rp.avatar) B.Avatar.update(rp.avatar, dt, Math.min(1, Math.hypot(vx, vz) / rp.moveSpeed), rp.grounded);
+  };
+
+  Game.prototype.tryReload = function (ent) {
+    var def = B.Weapon.byId(ent.weapon);
+    if (def.kind === "melee") return;
+    var st = ent.ammo[ent.weapon];
+    if (!st || st.mag >= def.mag || st.reserve <= 0 || ent.reloading > 0) return;
+    ent.reloading = def.reload;
+    B.Audio.reload();
+  };
+
+  Game.prototype.tryFire = function (ent) {
+    var def = B.Weapon.byId(ent.weapon);
+    if (ent.reloading > 0 || ent.cooldown > 0) return;
+    if (def.kind !== "melee") {
+      var st = ent.ammo[ent.weapon];
+      if (!st) return;
+      if (st.mag <= 0) { ent.cooldown = 0.3; this.tryReload(ent); return; }
+      st.mag--;
+    }
+    ent.cooldown = 60 / def.rpm;
+    var origin = new THREE.Vector3(ent.pos.x, ent.pos.y + ent.eye, ent.pos.z);
+    var dir = this.dirFromYawPitch(ent.yaw, ent.pitch);
+    if (def.kind === "projectile") this.spawnRocket(ent, def, origin, dir);
+    else if (def.kind === "melee") this.meleeAttack(ent, def);
+    else this.hitscanShot(ent, def, origin, dir, { damageMul: 1, spreadDeg: def.spread, tracer: true });
+    B.Audio.shoot(def.sfx || def.id);
+  };
+
+  /* Crea la representacion local de una entidad que llega por la red */
+  Game.prototype.spawnNetEntity = function (id) {
+    var human = id < 10;
+    var av = B.Avatar.build({
+      team: human ? "blue" : undefined,
+      shirt: human ? "#4b8dff" : undefined,
+      hat: "cap", mood: "angry"
+    });
+    this.scene.add(av.group);
+    var ent = {
+      netRemote: true, isBot: !human, isPlayer: false, netId: id,
+      name: human ? "Jugador" : "Bot", team: human ? "blue" : null, kind: "soldier",
+      pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
+      radius: 0.42, height: 1.9, eye: 1.62, grounded: true,
+      health: 100, maxHealth: 100, armor: 0, alive: true, invuln: 0,
+      weapon: "pistol", kills: 0, deaths: 0, score: 0, netMag: 0, netReserve: 0,
+      avatar: av, group: av.group, carrying: null, netTarget: null
+    };
+    this.netEntities[id] = ent;
+    this.entities.push(ent);
+    return ent;
+  };
+
+  Game.prototype.interpolateNetEntities = function (dt) {
+    var k = Math.min(1, dt * 13);
+    for (var id in this.netEntities) {
+      var e = this.netEntities[id];
+      if (!e.netTarget || e.netLocal) continue;
+      var px = e.pos.x, pz = e.pos.z;
+      e.pos.x = B.lerp(e.pos.x, e.netTarget.x, k);
+      e.pos.y = B.lerp(e.pos.y, e.netTarget.y, k);
+      e.pos.z = B.lerp(e.pos.z, e.netTarget.z, k);
+      e.yaw = B.angleLerp(e.yaw, e.netTarget.yaw, k);
+      if (e.group) {
+        e.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+        e.group.rotation.y = e.yaw;
+      }
+      if (e.avatar) {
+        var sp = Math.min(1, B.dist(e.pos.x, e.pos.z, px, pz) / Math.max(0.001, dt) / 6);
+        B.Avatar.update(e.avatar, dt, sp, true);
+      }
+    }
+  };
+
+  /* Fila del invitado sobre si mismo: vida, escudo y municion autoritativos */
+  Game.prototype.applySelfSnapshot = function (row) {
+    var p = this.player;
+    p.netTarget = { x: row[1], y: row[2], z: row[3], yaw: p.yaw, pitch: p.pitch };
+    p.health = row[6];
+    p.armor = row[7];
+    var alive = row[8] === 1;
+    if (p.alive !== alive) {
+      p.alive = alive;
+      if (!alive) { p.respawnTimer = 3.2; B.HUD.showRespawn(true, 3.2); p.thirdPerson = true; }
+    }
+    var w = B.WEAPONS[row[9] - 1];
+    if (w) p.weapon = w.id;
+    var st = p.ammo[p.weapon];
+    if (st) { st.mag = row[10]; st.reserve = row[11]; }
+    p.kills = row[12]; p.deaths = row[13]; p.score = row[14];
+  };
+
+  Game.prototype.updateNetClient = function (dt) {
+    this.interpolateNetEntities(dt);
+    var p = this.player;
+    if (p.netTarget) {
+      var d = B.dist(p.pos.x, p.pos.z, p.netTarget.x, p.netTarget.z);
+      if (d > 2.8) {
+        p.pos.x = p.netTarget.x; p.pos.y = p.netTarget.y; p.pos.z = p.netTarget.z;
+        p.vel.x = p.vel.y = p.vel.z = 0;
+      } else if (d > 0.45) {
+        var k = Math.min(1, dt * 3.4);
+        p.pos.x = B.lerp(p.pos.x, p.netTarget.x, k);
+        p.pos.z = B.lerp(p.pos.z, p.netTarget.z, k);
+        p.pos.y = B.lerp(p.pos.y, p.netTarget.y, Math.min(1, dt * 5));
+      }
+    }
+    this.netInputTimer -= dt;
+    if (this.netInputTimer <= 0) {
+      this.netInputTimer = 1 / B.Net.INPUT_HZ;
+      B.Net.sendFast("in", B.Net.buildInput(this));
+      if (Math.random() < 0.2) B.Net.sendFast("pg", null);
+    }
+  };
+
+  Game.prototype.hostNetTick = function (dt) {
+    this.netSnapTimer -= dt;
+    this.netRosterTimer -= dt;
+    if (this.netSnapTimer <= 0) {
+      this.netSnapTimer = 1 / B.Net.FAST_HZ;
+      B.Net.sendFast("sn", B.Net.buildSnapshot(this));
+    }
+    if (this.netRosterTimer <= 0) {
+      this.netRosterTimer = 2;
+      B.Net.sendRel("ro", B.Net.buildRoster(this));
+    }
+  };
+
+  Game.prototype.netBanner = function (text, dur, sub) {
+    B.HUD.banner(text, dur, sub);
+    if (this.netHost) this.netEvents.push(["bn", text, sub || "", dur || 2]);
+  };
+
+  Game.prototype.applyNetEvent = function (ev) {
+    if (!ev) return;
+    if (ev[0] === "kf") B.HUD.pushKill(ev[1], ev[2] || null, ev[3], ev[4], ev[5] || null, ev[6] === 1);
+    else if (ev[0] === "bn") B.HUD.banner(ev[1], ev[3] || 2, ev[2] || "");
+    else if (ev[0] === "to") B.HUD.toast(ev[1], 1.6);
   };
 
   B.Game = Game;

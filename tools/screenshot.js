@@ -135,6 +135,27 @@ Client.prototype.shot = function (file, quality) {
       throw new Error('la pagina no arranco: ' + url);
     }
 
+    /* Modo archivo unico: node tools/screenshot.js dist/BlockBurst.html */
+    var singlePage = process.argv[2];
+    if (singlePage) {
+      var rel = String(singlePage).replace(/\\/g, '/').replace(/^\.?\//, '');
+      await goto('http://127.0.0.1:' + PORT + '/' + rel, 4500,
+        'window.BLITZ && window.BLITZ.debug && document.getElementById("loading").hidden && document.querySelectorAll("#menuBody .card").length > 0');
+      shots.push({ name: 'captura-archivo-unico.png', size: await client.shot(path.join(OUT, 'captura-archivo-unico.png')) });
+      var d1 = await client.evaluate('(function(){var d=window.BLITZ&&window.BLITZ.debug;if(!d)return "sin debug";return JSON.stringify({estado:d.game.state,mapas:(window.BLITZ.MAPS||[]).length,modos:(window.BLITZ.MODES||[]).length,armas:(window.BLITZ.WEAPONS||[]).length,p2p:typeof RTCPeerConnection,menu:!document.getElementById("menu").hidden});})()');
+      console.log('Captura generada:');
+      shots.forEach(function (s) { console.log('  ' + s.name + '  ' + Math.round(s.size / 1024) + ' KB'); });
+      console.log('Diagnostico del archivo unico: ' + (d1 && d1.result ? d1.result.value : JSON.stringify(d1)));
+      var errs1 = client.events.filter(function (e) {
+        return e.method === 'Runtime.exceptionThrown' ||
+          (e.method === 'Runtime.consoleAPICalled' && e.params.type === 'error') ||
+          (e.method === 'Log.entryAdded' && e.params.entry.level === 'error');
+      });
+      console.log('Errores de consola/excepciones: ' + errs1.length);
+      client.ws.close();
+      return;
+    }
+
     /* 1. Menu principal */
     await goto('http://127.0.0.1:' + PORT + '/index.html', 2600,
       'document.getElementById("loading").hidden && document.querySelectorAll("#menuBody .card").length > 0');
