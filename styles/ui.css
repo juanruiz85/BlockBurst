@@ -380,6 +380,20 @@ input[type="range"]:focus-visible { outline: 3px solid var(--cyan); outline-offs
   font-family: var(--mono-font); font-size: 11.5px; word-break: break-all; resize: vertical;
 }
 .netCode:focus-visible { outline: 3px solid var(--cyan); outline-offset: 1px; }
+/* Recuadro de solo lectura: se ve apagado para dejar claro que ahi no se escribe */
+.netCode.readonly {
+  background: rgba(13, 16, 22, 0.85); color: var(--ink-dim); cursor: default;
+  font-size: 17px; letter-spacing: 0.22em; text-align: center;
+}
+/* Recuadro donde si se escribe: fondo claro y cursor de texto */
+.netCode.write {
+  background: #26303f; color: var(--ink); cursor: text; font-size: 17px; text-align: center;
+  border: 3px solid var(--line); border-color: #5a6f92; caret-color: var(--accent);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.netCode.write:hover { border-color: #6f88b0; }
+.netCode.write:focus { border-color: var(--accent); background: #2b3648; }
+.netCode.write::placeholder { color: #7f8da3; letter-spacing: 0.04em; font-size: 13px; }
 .netState {
   display: flex; align-items: center; gap: 9px; font-family: var(--mono-font); font-size: 13px;
   padding: 9px 11px; border: 2px solid var(--line); border-radius: var(--radius); background: var(--panel-2);

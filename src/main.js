@@ -164,26 +164,30 @@
       '<div class="panel" style="padding:16px;display:grid;gap:14px">' +
         '<div class="netState ' + stateKind + '" id="roomState"><i></i><span id="roomStateText" class="mono">' + B.esc(stateText) + '</span></div>' +
 
-        '<div id="roomOpenBox" style="display:' + (inRoom && host ? "grid" : "none") + ';gap:10px">' +
-          '<label class="field"><span>Codigo de la sala (pasalo a quien quieras invitar)</span></label>' +
+        '<div id="roomOpenBox" style="display:' + (inRoom && host ? "grid" : "none") + ';gap:8px">' +
+          '<label class="field"><span>Tu codigo de sala (solo lectura, se copia con el boton)</span></label>' +
           '<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">' +
-            '<input id="roomCodeOut" class="netCode" style="min-height:44px;flex:1;min-width:180px" readonly value="' + B.esc(B.Net.room || "") + '">' +
+            '<input id="roomCodeOut" class="netCode readonly" style="min-height:44px;flex:1;min-width:180px" readonly value="' + B.esc(B.Net.room || "") + '">' +
             '<button id="btnCopyRoom" class="btn">COPIAR</button>' +
+            '<button id="btnCopyInvite" class="btn">COPIAR INVITACION</button>' +
           '</div>' +
         '</div>' +
 
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
           '<button id="btnCreateRoom" class="btn primary"' + (inRoom ? " disabled" : "") + '>CREAR SALA</button>' +
-          '<button id="btnCopyInvite" class="btn">COPIAR INVITACION</button>' +
           '<button id="btnCloseRoom" class="btn"' + (inRoom ? "" : " disabled") + '>CERRAR SALA</button>' +
         '</div>' +
 
-        '<div style="display:grid;gap:10px">' +
-          '<label class="field"><span>Unirse con un codigo</span></label>' +
-        '</div>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-          '<input id="roomCodeIn" class="netCode" style="min-height:44px;flex:1;min-width:160px" placeholder="Escribe el codigo, por ejemplo K7M2P" maxlength="8">' +
-          '<button id="btnJoinRoom" class="btn primary"' + (inRoom ? " disabled" : "") + '>UNIRSE</button>' +
+        '<div style="border-top:2px solid var(--line-soft);padding-top:14px;display:grid;gap:8px">' +
+          '<label class="field"><span>Aqui si se escribe: si te han dado un codigo, unete</span></label>' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+            '<input id="roomCodeIn" class="netCode write" style="min-height:46px;flex:1;min-width:170px;text-transform:uppercase;letter-spacing:0.22em" placeholder="Escribe el codigo, por ejemplo K7M2P" maxlength="8" autocomplete="off" spellcheck="false">' +
+            '<button id="btnPasteRoom" class="btn">PEGAR</button>' +
+            '<button id="btnJoinRoom" class="btn primary"' + (inRoom ? " disabled" : "") + '>UNIRSE</button>' +
+          '</div>' +
+          '<p class="dim" id="joinHint" style="font-size:12.5px;margin:0">' +
+            (inRoom ? "Estas dentro de una sala: cierrala si quieres unirte a otra." : "Pulsa primero en el recuadro y escribe; o pulsa PEGAR si lo copiaste.") +
+          '</p>' +
         '</div>' +
 
         '<div style="display:grid;gap:8px">' +
@@ -383,6 +387,29 @@
 
     var cr = $("btnCreateRoom"); if (cr) cr.addEventListener("click", function () { openRoom(true); });
     var jr = $("btnJoinRoom"); if (jr) jr.addEventListener("click", function () { openRoom(false); });
+    var ci2 = $("roomCodeIn");
+    if (ci2) {
+      ci2.addEventListener("input", function () { ci2.value = ci2.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
+      ci2.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") { ev.preventDefault(); openRoom(false); }
+      });
+    }
+    var bp = $("btnPasteRoom");
+    if (bp) bp.addEventListener("click", function () {
+      B.Audio.ui();
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          navigator.clipboard.readText().then(function (t) {
+            var clean = String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+            if (!clean) { roomState("bad", "El portapapeles esta vacio o no tiene un codigo."); return; }
+            if (ci2) { ci2.value = clean; ci2.focus(); }
+            roomState("warn", "Codigo pegado: " + clean + ". Pulsa UNIRSE.");
+          }, function () { roomState("warn", "El navegador no dejo leer el portapapeles; escribe el codigo a mano."); });
+          return;
+        }
+      } catch (e) { }
+      roomState("warn", "Pega a mano con Ctrl+V dentro del recuadro.");
+    });
     var sr = $("btnStartRoom"); if (sr) sr.addEventListener("click", function () { B.Audio.ui(); startRoomMatch(); });
     var xr = $("btnCloseRoom"); if (xr) xr.addEventListener("click", function () { closeRoom(false); });
     var cp = $("btnCopyRoom"); if (cp) cp.addEventListener("click", copyRoomCode);

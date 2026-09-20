@@ -20,7 +20,16 @@
     Digit3: 1, Digit4: 1, Digit5: 1, Digit6: 1, Digit7: 1, KeyR: 1, KeyV: 1, KeyC: 1, KeyF: 1
   };
 
+  /* No secuestrar el teclado cuando se escribe en un campo del menu */
+  function isTyping(e) {
+    var t = e.target;
+    if (!t) return false;
+    var tag = (t.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable === true;
+  }
+
   function onKeyDown(e) {
+    if (isTyping(e)) return;
     if (e.repeat) {
       if (BLOCK[e.code]) e.preventDefault();
       return;
@@ -32,6 +41,7 @@
   }
 
   function onKeyUp(e) {
+    if (isTyping(e)) return;
     keys[e.code] = false;
     if (BLOCK[e.code]) e.preventDefault();
   }
