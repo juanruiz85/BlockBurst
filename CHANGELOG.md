@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## v0.3.1 - Arreglo del campo del codigo de sala
+
+- El juego capturaba el teclado a nivel global para WASD y se comia las letras al escribir
+  en los formularios del menu: un codigo como `4WF2B` no se podia teclear (la W y la F se
+  perdian). Ahora la captura se desactiva cuando el foco esta en un `input`, `textarea` o
+  `select`, lo que tambien arregla el campo del nombre y el atajo Ctrl+V.
+- Interfaz de sala mas clara: el recuadro del codigo propio queda marcado como **solo lectura**
+  (apagado y centrado) y el de unirse como **editable** (contorno y fondo distintos), con
+  etiquetas explicitas, boton **PEGAR**, mayusculas automaticas y **Enter** para unirse.
+- `tools/typingtest.js`: escribe el codigo con pulsaciones reales de teclado y comprueba que
+  el campo lo recibe.
+
 ## v0.3.0 - Salas de hasta 10 jugadores
 
 ### Salas por codigo (nuevo)

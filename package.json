@@ -1,6 +1,6 @@
 {
   "name": "blockburst",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Shooter de arena con bloques de colores para navegador: 6 mapas, 5 modos y bots con IA.",
   "keywords": ["juego", "shooter", "webgl", "threejs", "canvas", "voxel"],
