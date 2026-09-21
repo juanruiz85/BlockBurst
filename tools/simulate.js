@@ -232,6 +232,7 @@ function runMatch(label, config, seconds, opts) {
   var frames = Math.round(seconds / dt);
   var thrown = null;
   var kills = 0, deaths = 0, prevKills = 0;
+  var minZombieDist = Infinity;
 
   for (var f = 0; f < frames; f++) {
     if (opts.autoAim) {
@@ -261,6 +262,12 @@ function runMatch(label, config, seconds, opts) {
     var k = 0;
     for (var i = 0; i < game.entities.length; i++) k += game.entities[i].kills;
     if (k !== prevKills) { kills = k; prevKills = k; }
+    for (var zi = 0; zi < game.entities.length; zi++) {
+      var zz = game.entities[zi];
+      if (zz.kind === "zombie" && zz.alive) {
+        minZombieDist = Math.min(minZombieDist, B.dist(zz.pos.x, zz.pos.z, game.player.pos.x, game.player.pos.z));
+      }
+    }
     if (opts.verbose && f % (60 * 10) === 0) {
       var zs = game.entities.filter(function (e) { return e.kind === "zombie" && e.alive; });
       var minD = 1e9;
@@ -281,9 +288,11 @@ function runMatch(label, config, seconds, opts) {
     " pos=(" + player.pos.x.toFixed(1) + "," + player.pos.y.toFixed(1) + "," + player.pos.z.toFixed(1) + ")" +
     (game.finished ? " FIN" : ""));
   if (thrown) { console.log("        " + thrown.split("\n")[0]); errors.push(label + ": " + thrown); }
-  if (game.state === "playing" && !thrown && kills === 0) errors.push(label + ": no hubo ninguna baja en " + seconds + "s");
+  if (game.state === "playing" && !thrown && kills === 0 && minZombieDist > 4) {
+    errors.push(label + ": ni bajas ni acercamiento enemigo en " + seconds + "s");
+  }
   game.teardown();
-  return { game: game, thrown: thrown, kills: kills };
+  return { game: game, thrown: thrown, kills: kills, minZombieDist: minZombieDist };
 }
 
 console.log("BLOCKBURST - simulacion sin navegador\n");

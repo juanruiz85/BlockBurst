@@ -88,7 +88,12 @@
       else if (kind === "smg") { noise({ freq: 3200, to: 900, dur: 0.07, gain: 0.2, q: 2 }); tone({ freq: 420, to: 180, dur: 0.06, type: "square", gain: 0.14 }); }
       else { noise({ freq: 2600, to: 700, dur: 0.09, gain: 0.24, q: 1.6 }); tone({ freq: 340, to: 130, dur: 0.08, type: "square", gain: 0.16 }); }
     },
-    melee: function () { noise({ freq: 1800, to: 420, dur: 0.16, gain: 0.24, q: 0.8, filter: "highpass" }); },
+    melee: function () {
+      // Silbido del filo: barrido de ruido + brillo metalico
+      noise({ freq: 3000, to: 420, dur: 0.2, gain: 0.3, q: 0.6, filter: "highpass" });
+      tone({ freq: 1500, to: 950, dur: 0.1, type: "triangle", gain: 0.1, delay: 0.02 });
+      tone({ freq: 2600, to: 1900, dur: 0.14, type: "square", gain: 0.05, delay: 0.05 });
+    },
     reload: function () {
       tone({ freq: 300, to: 190, dur: 0.06, type: "square", gain: 0.16 });
       tone({ freq: 240, to: 150, dur: 0.07, type: "square", gain: 0.16, delay: 0.16 });

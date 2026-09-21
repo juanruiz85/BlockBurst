@@ -41,6 +41,28 @@
     return dir;
   }
 
+  /* Pose del tajo de katana: amago arriba-derecha, corte diagonal rapido y vuelta */
+  var KATANA_KEYS = [
+    { t: 0.00, rx: -0.30, ry: 0.40, rz: 0.30, px: 0.34, py: -0.30, pz: -0.58 },
+    { t: 0.20, rx: -0.85, ry: 0.80, rz: 0.60, px: 0.44, py: -0.20, pz: -0.50 },
+    { t: 0.42, rx: 0.15, ry: 0.05, rz: 0.05, px: 0.24, py: -0.32, pz: -0.70 },
+    { t: 0.60, rx: 0.80, ry: -0.85, rz: -0.55, px: 0.02, py: -0.44, pz: -0.60 },
+    { t: 0.78, rx: 0.30, ry: -0.40, rz: -0.20, px: 0.20, py: -0.34, pz: -0.58 },
+    { t: 1.00, rx: -0.30, ry: 0.40, rz: 0.30, px: 0.34, py: -0.30, pz: -0.58 }
+  ];
+  function katanaPose(group, t) {
+    t = B.clamp(t, 0, 1);
+    var a = KATANA_KEYS[0], b = KATANA_KEYS[KATANA_KEYS.length - 1];
+    for (var i = 0; i < KATANA_KEYS.length - 1; i++) {
+      if (t >= KATANA_KEYS[i].t && t <= KATANA_KEYS[i + 1].t) { a = KATANA_KEYS[i]; b = KATANA_KEYS[i + 1]; break; }
+    }
+    var span = (b.t - a.t) || 1;
+    var k = (t - a.t) / span;
+    k = k * k * (3 - 2 * k);
+    group.position.set(a.px + (b.px - a.px) * k, a.py + (b.py - a.py) * k, a.pz + (b.pz - a.pz) * k);
+    group.rotation.set(a.rx + (b.rx - a.rx) * k, a.ry + (b.ry - a.ry) * k, a.rz + (b.rz - a.rz) * k);
+  }
+
   function Game() {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(80, 1, 0.06, 700);
@@ -238,6 +260,17 @@
 
     this.muzzleLight = new THREE.PointLight("#ffd27a", 0, 9);
     this.viewScene.add(this.muzzleLight);
+
+    // Estela del corte: media luna que barre con el filo y se desvanece
+    if (this.slashTrail && this.slashTrail.parent) this.slashTrail.parent.remove(this.slashTrail);
+    this.slashTrail = new THREE.Mesh(
+      new THREE.RingGeometry(0.1, 0.185, 26, 1, 0, 2.2),
+      new THREE.MeshBasicMaterial({ color: "#f2ffff", transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+    );
+    this.slashTrail.position.set(0.13, -0.15, -0.6);
+    this.slashTrail.rotation.x = -0.3;
+    this.slashTrail.visible = false;
+    this.viewScene.add(this.slashTrail);
 
     this.setWeapon(this.player.weapon, true);
   };
@@ -503,6 +536,7 @@
       if (dot < cosArc) continue;
       var falloff = 1 - 0.35 * (horiz / def.range);
       this.dealDamage(e, def.damage * falloff, shooter, { weapon: def.name });
+      this.spawnImpact(new THREE.Vector3(e.pos.x, e.pos.y + 1.15, e.pos.z), "#ffe6a0");
       hits++;
       if (hits >= maxTargets) break;
     }
@@ -846,6 +880,16 @@
     var sp = Math.hypot(p.vel.x, p.vel.z) / p.moveSpeed;
     B.Avatar.update(av, dt, sp, p.grounded);
     B.Avatar.aim(av, p.pitch);
+    // En tercera persona tambien se ve el tajo
+    var wdef = B.Weapon.byId(p.weapon);
+    if (wdef.kind === "melee" && this.vmSwing > 0) {
+      var st = 1 - this.vmSwing / (wdef.swingTime || 0.46);
+      var arc = Math.sin(st * Math.PI);
+      av.armR.rotation.x = -1.5 + arc * 2.1;
+      av.armR.rotation.z = 0.5 - st * 1.2;
+    } else {
+      av.armR.rotation.z = 0;
+    }
   };
 
   Game.prototype.handleFiring = function (dt) {
@@ -1478,6 +1522,26 @@
 
     this.vmRoot.position.set(tx, ty, tz);
     this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9 - slash * 0.28, ads * 0.02 + _swayY * 0.5 + swYaw, swRoll);
+
+    // La katana se mueve con pose de tajo (amago, corte y vuelta)
+    if (swDef.kind === "melee") {
+      katanaPose(this.vmRoot, this.vmSwing > 0 ? swingT : 0);
+    }
+
+    // Estela visible del corte
+    if (this.slashTrail) {
+      var elapsed = this.vmSwing > 0 ? (swTime - this.vmSwing) : -1;
+      var t0 = swTime * 0.14, t1 = swTime * 0.72;
+      if (elapsed >= t0 && elapsed <= t1) {
+        var p = (elapsed - t0) / (t1 - t0);
+        this.slashTrail.visible = true;
+        this.slashTrail.material.opacity = Math.sin((1 - p) * Math.PI * 0.5) * 0.92;
+        this.slashTrail.rotation.z = 1.0 - p * 2.2;
+        this.slashTrail.scale.setScalar(0.85 + p * 0.35);
+      } else {
+        this.slashTrail.visible = false;
+      }
+    }
 
     if (this.muzzleTimer > 0) {
       this.muzzleTimer -= dt;

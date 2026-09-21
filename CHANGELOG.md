@@ -1,5 +1,15 @@
 # Historial de cambios
 
+## v0.5.2 - El corte de la katana se ve
+
+- **Tajo por fases**: amago arriba a la derecha, corte diagonal rapido y recuperacion. El
+  golpe entra cuando llega la hoja (a los 0,17 s de un tajo de 0,46 s), no al pulsar.
+- **Estela visible del corte**: un arco claro barre la pantalla siguiendo el filo y se
+  desvanece, de modo que el tajo **se ve**, no solo se nota.
+- **Silbido del filo** mas definido (barrido de ruido mas brillo metalico).
+- **Impactos visibles** en cada enemigo alcanzado por el barrido.
+- En **tercera persona** el brazo tambien ejecuta el tajo, asi que se ve desde fuera.
+
 ## v0.5.1 - Ajustes que destaparon las pruebas
 
 Al ejecutar la bateria completa varias veces seguidas, las comprobaciones automaticas

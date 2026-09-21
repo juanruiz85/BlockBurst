@@ -40,9 +40,9 @@
     {
       id: "katana", slot: 6, name: "KATANA", short: "KAT", kind: "melee", color: "#f4f7ff", hud: "#f4f7ff",
       damage: 74, range: 2.7, arc: 1.8, sweep: true, maxTargets: 3,
-      swingTime: 0.36, hitAt: 0.14, lunge: 7.5,
+      swingTime: 0.46, hitAt: 0.17, lunge: 8,
       mag: 0, reserve: 0, reload: 0, recoil: 0, kick: 0.012,
-      rpm: 140, auto: true, sfx: "melee", headMul: 1.0
+      rpm: 120, auto: true, sfx: "melee", headMul: 1.0
     },
     {
       id: "rocket", slot: 7, name: "LANZACOHETES", short: "RCK", kind: "projectile", color: "#ff7a1a", hud: "#ff7a1a",
