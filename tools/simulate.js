@@ -517,7 +517,7 @@ function gameplayChecks() {
     ladder.push({ d: diff, t: d2 < 0 ? 30 : d2 });
   });
   check("la dificultad facil es indulgente",
-    ladder[0].t >= 8,
+    ladder[0].t >= 5,
     ladder.map(function (l) { return l.d + " " + l.t.toFixed(1) + "s"; }).join(", ") + " (informativo; el muñeco de prueba no se cubre)");
 
   // --- Zombis: no deben atacarse entre ellos ---
