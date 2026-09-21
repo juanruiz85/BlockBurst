@@ -13,10 +13,10 @@
 
   /* Menos letales que antes: mas tiempo de reaccion, mas error de punteria y menos dano */
   var PRESETS = {
-    facil: { reaction: 0.85, aim: 4.6, dmg: 0.4, view: 55, burst: [0.35, 1.5], strafe: 0.3, hpMul: 0.85 },
-    normal: { reaction: 0.6, aim: 2.9, dmg: 0.6, view: 72, burst: [0.45, 1.15], strafe: 0.42, hpMul: 1.0 },
-    dificil: { reaction: 0.4, aim: 1.8, dmg: 0.8, view: 92, burst: [0.6, 0.9], strafe: 0.55, hpMul: 1.0 },
-    pesadilla: { reaction: 0.25, aim: 1.2, dmg: 0.95, view: 112, burst: [0.75, 0.7], strafe: 0.7, hpMul: 1.05 }
+    facil: { reaction: 1.15, aim: 5.4, dmg: 0.3, view: 42, burst: [0.2, 2.4], strafe: 0.3, hpMul: 0.85 },
+    normal: { reaction: 0.8, aim: 3.8, dmg: 0.45, view: 55, burst: [0.26, 2.0], strafe: 0.42, hpMul: 1.0 },
+    dificil: { reaction: 0.55, aim: 2.6, dmg: 0.65, view: 74, burst: [0.36, 1.5], strafe: 0.55, hpMul: 1.0 },
+    pesadilla: { reaction: 0.35, aim: 1.7, dmg: 0.85, view: 95, burst: [0.5, 1.0], strafe: 0.7, hpMul: 1.05 }
   };
 
   var usedNames = [];
@@ -397,7 +397,8 @@
             else { bot.ammoMag = bot.def.mag; bot.ammoReserve = bot.def.reserve; }
           } else if (bot.cooldown <= 0) {
             B.Bots.shoot(game, bot);
-            bot.cooldown = 60 / bot.def.rpm;
+            // Los bots disparan mas pausado que la cadencia maxima del arma
+            bot.cooldown = (60 / bot.def.rpm) * 1.5;
             if (bot.burstLeft <= 0) bot.burstLeft = Math.max(2, Math.round(bot.def.rpm * preset.burst[0] / 60));
             bot.burstLeft--;
             if (bot.burstLeft <= 0) bot.burstPause = preset.burst[1] * (0.7 + Math.random() * 0.7);
@@ -447,7 +448,7 @@
       if (!t) return;
       B.Audio.melee();
       // Un zombi golpea mas flojo que un humano con la katana
-      var mul = bot.kind === "zombie" ? bot.preset.dmg * 0.35 : bot.preset.dmg;
+      var mul = bot.kind === "zombie" ? bot.preset.dmg * 0.6 : bot.preset.dmg;
       game.hitscanShot(bot, bot.def, new THREE.Vector3(bot.pos.x, bot.pos.y + bot.eye, bot.pos.z),
         new THREE.Vector3(t.pos.x - bot.pos.x, (t.pos.y + 1.1) - (bot.pos.y + bot.eye), t.pos.z - bot.pos.z).normalize(),
         { damageMul: mul, melee: true, source: "bot" });

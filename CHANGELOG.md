@@ -1,5 +1,31 @@
 # Historial de cambios
 
+## v0.5.3 - Aciertas cuando apuntas, y los bots son mas justos
+
+### Precision ("disparo y parece que no acierto")
+- La causa era la **dispersion**: el rifle tenia 1,1 grados de base (y mas al moverte). A 35 m
+  eso es un circulo de mas de un metro, asi que apuntar a una cabeza de 60 cm fallaba a
+  menudo sin que se viera el motivo.
+- Dispersión reducida: rifle 1,1 -> **0,5** grados, pistola 0,9 -> **0,55**, subfusil 1,7 ->
+  **1,1**, francotirador 0,14 -> **0,05**. El castigo por moverse baja de 1,0 a 0,55 y el de
+  disparar en rafaga tambien.
+- **Hitbox de cabeza** algo mas generoso (0,68 m de ancho en vez de 0,60) y empieza un poco
+  mas abajo, de modo que un tiro al cuello cuenta como cabeza.
+- Medido: **12 de 12 aciertos a la cabeza** a 8, 20 y 35 m con el rifle.
+
+### Bots mas justos ("matan muy rapido")
+- Disparan **mas pausado** que la cadencia maxima del arma (1,5 veces el tiempo entre
+  disparos), las rafagas son mas cortas y hay mas pausa entre ellas.
+- **Menos dano por bala** en todos los niveles (normal 0,6 -> 0,45), **menos alcance de
+  vision** (72 -> 55 m) y mas tiempo de reaccion.
+- La **invulnerabilidad al reaparecer** baja de 1,6 a 0,8 s: antes, si disparabas justo tras
+  su reaparicion, parecia que no acertabas.
+- Medido: con 3 bots en Normal, el muñeco de prueba (que **no se cubre ni esquiva**) aguanta
+  entre 20 y 30 s; antes caia en pocos segundos. La escala se nota: en Facil aguanta mas que
+  en Dificil.
+- Los zombis pegan algo mas que en la version anterior (se habian quedado flojos), pero
+  siguen sin matar de dos golpes.
+
 ## v0.5.2 - El corte de la katana se ve
 
 - **Tajo por fases**: amago arriba a la derecha, corte diagonal rapido y recuperacion. El

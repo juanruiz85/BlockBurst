@@ -453,9 +453,9 @@
       if (shooter.team && e.team === shooter.team && !this.friendlyFire) continue;
       var r = e.radius + 0.06, h = e.height;
       var bt = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z,
-        e.pos.x - r, e.pos.y + 0.1, e.pos.z - r, e.pos.x + r, e.pos.y + h * 0.8, e.pos.z + r);
+        e.pos.x - r, e.pos.y + 0.1, e.pos.z - r, e.pos.x + r, e.pos.y + h * 0.78, e.pos.z + r);
       var ht = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z,
-        e.pos.x - 0.3, e.pos.y + h * 0.8, e.pos.z - 0.3, e.pos.x + 0.3, e.pos.y + h + 0.14, e.pos.z + 0.3);
+        e.pos.x - 0.34, e.pos.y + h * 0.78, e.pos.z - 0.34, e.pos.x + 0.34, e.pos.y + h + 0.16, e.pos.z + 0.34);
       var useT = -1, head = false;
       if (bt >= 0 && (ht < 0 || bt <= ht)) { useT = bt; head = false; }
       else if (ht >= 0) { useT = ht; head = true; }
@@ -1600,7 +1600,7 @@
       team: team, kind: "soldier",
       pos: { x: 0, y: 0.12, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
       radius: 0.42, height: 1.9, eye: 1.62, grounded: true, jumpCooldown: 0,
-      health: 100, maxHealth: 100, armor: 50, alive: true, invuln: 1.5,
+      health: 100, maxHealth: 100, armor: 50, alive: true, invuln: 0.8,
       moveSpeed: 6.3, runMul: 1.42, crouchMul: 0.5,
       weapon: "pistol", ammo: {}, cooldown: 0, reloading: 0, shots: 0, shotTimer: 0,
       kills: 0, deaths: 0, score: 0, respawnTimer: 0, carrying: null,
@@ -1646,7 +1646,7 @@
       var sp = B.Bots.spawnPointFor(self, rp.team);
       rp.pos.x = sp[0]; rp.pos.z = sp[1]; rp.pos.y = (sp[2] || 0) + 0.08;
       rp.vel.x = rp.vel.y = rp.vel.z = 0;
-      rp.health = rp.maxHealth; rp.armor = 50; rp.alive = true; rp.invuln = 1.6;
+      rp.health = rp.maxHealth; rp.armor = 50; rp.alive = true; rp.invuln = 0.8;
       rp.ammo.pistol.reserve = 999;
       if (rp.group) rp.group.visible = true;
       B.Audio.spawn();

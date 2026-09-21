@@ -8,13 +8,13 @@
   var WEAPONS = [
     {
       id: "pistol", slot: 1, name: "PISTOLA", short: "PST", kind: "hitscan", color: "#c9d3e6", hud: "#c9d3e6",
-      damage: 26, rpm: 400, mag: 12, reserve: 72, spread: 0.9, adsSpread: 0.32, pellets: 1,
+      damage: 26, rpm: 400, mag: 12, reserve: 72, spread: 0.55, adsSpread: 0.22, pellets: 1,
       range: 120, falloffStart: 26, falloffEnd: 70, falloffMin: 0.62, auto: false,
       reload: 1.15, recoil: 0.5, kick: 0.026, sfx: "pistol", headMul: 2.0, adsFov: 62
     },
     {
       id: "smg", slot: 2, name: "SUBFUSIL", short: "SMG", kind: "hitscan", color: "#8ede5a", hud: "#8ede5a",
-      damage: 15, rpm: 880, mag: 34, reserve: 170, spread: 1.7, adsSpread: 0.95, pellets: 1,
+      damage: 15, rpm: 880, mag: 34, reserve: 170, spread: 1.1, adsSpread: 0.65, pellets: 1,
       range: 90, falloffStart: 18, falloffEnd: 52, falloffMin: 0.55, auto: true,
       reload: 1.5, recoil: 0.3, kick: 0.015, sfx: "smg", headMul: 1.6, adsFov: 66
     },
@@ -26,13 +26,13 @@
     },
     {
       id: "rifle", slot: 4, name: "RIFLE", short: "RIF", kind: "hitscan", color: "#34d6f0", hud: "#34d6f0",
-      damage: 23, rpm: 600, mag: 30, reserve: 150, spread: 1.1, adsSpread: 0.45, pellets: 1,
+      damage: 23, rpm: 600, mag: 30, reserve: 150, spread: 0.5, adsSpread: 0.24, pellets: 1,
       range: 140, falloffStart: 34, falloffEnd: 90, falloffMin: 0.7, auto: true,
       reload: 1.9, recoil: 0.62, kick: 0.045, sfx: "rifle", headMul: 2.0, adsFov: 60
     },
     {
       id: "sniper", slot: 5, name: "FRANCOTIRADOR", short: "SNP", kind: "hitscan", color: "#c86bff", hud: "#c86bff",
-      damage: 88, rpm: 44, mag: 5, reserve: 25, spread: 0.14, adsSpread: 0.0, pellets: 1,
+      damage: 88, rpm: 44, mag: 5, reserve: 25, spread: 0.05, adsSpread: 0.0, pellets: 1,
       range: 240, falloffStart: 200, falloffEnd: 300, falloffMin: 0.9, auto: false,
       reload: 2.7, recoil: 1.6, kick: 0.075, sfx: "sniper", headMul: 2.4,
       adsFov: 22, lethalHead: true, scope: true
@@ -152,10 +152,10 @@
     spreadDeg: function (def, state) {
       if (def.kind === "melee") return 0;
       var base = state.ads && def.adsSpread != null ? def.adsSpread : def.spread;
-      var move = state.speedRatio * (def.kind === "hitscan" ? 1.0 : 0.6);
-      var air = state.grounded ? 0 : 1.4;
-      var streak = Math.min(1.6, state.shots * 0.16);
-      return base * (1 + move * 0.9 + air + streak);
+      var move = state.speedRatio * (def.kind === "hitscan" ? 0.55 : 0.45);
+      var air = state.grounded ? 0 : 1.0;
+      var streak = Math.min(1.2, state.shots * 0.11);
+      return base * (1 + move + air + streak);
     }
   };
 })();

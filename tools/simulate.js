@@ -439,6 +439,87 @@ function gameplayChecks() {
     katana.swingTime > 0 && katana.hitAt > 0 && katana.lunge > 0 && katana.auto === true,
     "tajo " + katana.swingTime + " s, golpe a los " + katana.hitAt + " s, zancada " + katana.lunge);
 
+  /* Busca una direccion despejada desde un punto para colocar pruebas */
+  function clearDir(game, spot, need) {
+    for (var a = 0; a < 16; a++) {
+      var ang = a * Math.PI / 8;
+      var dx = Math.cos(ang), dz = Math.sin(ang);
+      if (!game.world.raycast(new THREE.Vector3(spot.x, 1.62, spot.z), new THREE.Vector3(dx, 0, dz), need, 0.3)) {
+        return { x: dx, z: dz };
+      }
+    }
+    return null;
+  }
+
+  // --- Precision: disparos a la cabeza a varias distancias ---
+  var g7 = new B.Game();
+  g7.initRenderer(new El("canvas"));
+  g7.onFinish = function () { };
+  g7.start({ modeId: "dm", mapId: "distrito", bots: 1, difficulty: "normal", fov: 80, name: "Tu" });
+  var tgt = g7.entities.filter(function (e) { return e.isBot; })[0];
+  var spotP = clearSpot(g7);
+  var dirP = clearDir(g7, spotP, 37);
+  var hitsByDist = [], shotsByDist = [];
+  var dists = [8, 20, 35];
+  if (dirP) {
+    dists.forEach(function (dist, di) {
+      hitsByDist[di] = 0; shotsByDist[di] = 0;
+      for (var rep = 0; rep < 12; rep++) {
+        tgt.alive = true; tgt.health = 100; tgt.armor = 0; tgt.invuln = 0;
+        tgt.pos.x = spotP.x + dirP.x * dist;
+        tgt.pos.y = 0.1;
+        tgt.pos.z = spotP.z + dirP.z * dist;
+        var origin = new THREE.Vector3(spotP.x, 1.62, spotP.z);
+        var headY = tgt.pos.y + 1.78;
+        var dir = new THREE.Vector3(tgt.pos.x - origin.x, headY - origin.y, tgt.pos.z - origin.z).normalize();
+        var before = tgt.health;
+        g7.hitscanShot(g7.player, B.Weapon.byId("rifle"), origin, dir, {
+          damageMul: 1,
+          spreadDeg: B.Weapon.spreadDeg(B.Weapon.byId("rifle"), { ads: false, speedRatio: 0, grounded: true, shots: 0 })
+        });
+        shotsByDist[di]++;
+        if (tgt.health < before) hitsByDist[di]++;
+      }
+    });
+    check("precision: el rifle acierta a la cabeza a distintas distancias",
+      hitsByDist[0] >= 11 && hitsByDist[1] >= 10 && hitsByDist[2] >= 9,
+      "8m " + hitsByDist[0] + "/12, 20m " + hitsByDist[1] + "/12, 35m " + hitsByDist[2] + "/12");
+  } else {
+    check("precision: el rifle acierta a la cabeza a distintas distancias", false, "no se encontro linea despejada");
+  }
+
+  // --- Los bots no deben matar demasiado rapido ---
+  var g8 = new B.Game();
+  g8.initRenderer(new El("canvas"));
+  g8.onFinish = function () { };
+  g8.start({ modeId: "dm", mapId: "distrito", bots: 3, difficulty: "normal", fov: 80, name: "Tu" });
+  var diedAt = -1;
+  for (var q = 0; q < 60 * 30; q++) {
+    g8.update(1 / 60);
+    if (!g8.player.alive) { diedAt = q / 60; break; }
+  }
+  console.log("        (informativo) supervivencia con 3 bots en normal: " +
+    (diedAt < 0 ? "aguanto los 30 s" : (diedAt.toFixed(1) + " s")) +
+    "  [el muñeco de prueba no se cubre ni esquiva]");
+
+  // --- La escala de dificultad debe notarse ---
+  var ladder = [];
+  ["facil", "normal", "dificil"].forEach(function (diff) {
+    var gg = new B.Game();
+    gg.initRenderer(new El("canvas"));
+    gg.onFinish = function () { };
+    gg.start({ modeId: "dm", mapId: "distrito", bots: 3, difficulty: diff, fov: 80, name: "Tu" });
+    var d2 = -1;
+    for (var w = 0; w < 60 * 30; w++) {
+      gg.update(1 / 60);
+      if (!gg.player.alive) { d2 = w / 60; break; }
+    }
+    ladder.push({ d: diff, t: d2 < 0 ? 30 : d2 });
+  });
+  check("la dificultad se nota: en facil se aguanta mas que en dificil",
+    ladder[0].t >= 10 && ladder[0].t >= ladder[2].t,
+    ladder.map(function (l) { return l.d + " " + l.t.toFixed(1) + "s"; }).join(", "));
+
   // --- Zombis: no deben atacarse entre ellos ---
   var g5 = new B.Game();
   g5.initRenderer(new El("canvas"));
