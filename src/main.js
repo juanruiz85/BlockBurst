@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var B = (window.BLITZ = window.BLITZ || {});
-  B.VERSION = "0.5.3";
+  B.VERSION = "0.5.4";
 
   var DIFFS = [
     { id: "facil", label: "Facil" },

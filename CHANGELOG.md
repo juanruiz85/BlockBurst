@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## v0.5.4 - Las islas vuelven a parecer islas
+
+- El arreglo anterior (pasarelas en L de 9 m de ancho que solapaban las plataformas) soldaba
+  todo el mapa en una sola plancha: dejaba de parecer un mapa de islas flotantes.
+- Ahora son **nueve islas separadas** repartidas en cuadricula, con **huecos de vacio de unos
+  16 m** entre ellas, unidas por **pasarelas finas de 4,5 m** que solo solapan 1 m en cada
+  borde.
+- Se mantiene lo bueno del arreglo anterior: el **100% del terreno transitable sigue
+  conectado** (una sola zona), los bots y zombis **no se caen** y las rutas cruzan las
+  pasarelas (se añaden puntos de ruta en cada extremo y en el centro de cada pasarela).
+- Verificado: 0 caidas en 45 s de supervivencia y el 100% del terreno en una sola masa.
+
 ## v0.5.3 - Aciertas cuando apuntas, y los bots son mas justos
 
 ### Precision ("disparo y parece que no acierto")

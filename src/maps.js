@@ -232,11 +232,13 @@
     var pts = candidates(cfg, boxes);
     var half = cfg.size / 2;
     var rng = B.rng(seed);
-
     var spawns = pickSpread(pts, 16, cfg.size * 0.2, rng);
     if (spawns.length < 8) spawns = pts.slice(0, 12);
 
     var waypoints = pickSpread(pts, 44, cfg.size * 0.08, rng).map(function (p) { return [p[0], p[1]]; });
+    if (cfg.waypoints && cfg.waypoints.length) {
+      cfg.waypoints.forEach(function (w) { waypoints.push([r2(w[0]), r2(w[1])]); });
+    }
     if (waypoints.length < 10) waypoints = pts.map(function (p) { return [p[0], p[1]]; });
 
     var pickSrc = pts.slice();
@@ -553,36 +555,65 @@
 
   /* ---------------------- 6. Islas Flotantes (vacio) -------------------- */
   (function () {
-    var size = 112;
+    var size = 116;
     var rand = B.rng(606);
     var out = [];
-    var RING = 6;
-    var RAD = 30;
-    var islands = [{ x: 0, z: 0, w: 28, d: 28 }];
-    for (var r = 0; r < RING; r++) {
-      var ang = (r / RING) * Math.PI * 2 - Math.PI / 2;
-      islands.push({ x: Math.cos(ang) * RAD, z: Math.sin(ang) * RAD, w: 19, d: 19 });
-    }
-    islands.forEach(function (is, i) {
-      out.push({ p: [is.x, -3, is.z], s: [is.w, 3, is.d], c: i === 0 ? "#7ab55c" : "#6fa04e" });
-      out.push({ p: [is.x, 0, is.z], s: [is.w * 0.4, 1.2 + rand() * 1.0, is.d * 0.4], c: ["#c9a86a", "#b8975a", "#8a6f45"][i % 3] });
-      if (rand() < 0.8) out.push({ p: [is.x - is.w * 0.28, 0, is.z + is.d * 0.24], s: [3, 4 + rand() * 3, 3], c: "#5d7a3a" });
-      if (rand() < 0.7) out.push({ p: [is.x + is.w * 0.3, 0, is.z - is.d * 0.24], s: [2.6, 3 + rand() * 2.5, 2.6], c: "#7f6a44" });
+    var waypoints = [];
+    var G = 34;   // separacion entre islas
+
+    /* Islas repartidas en cuadricula: huecos grandes de vacio entre ellas */
+    var isl = [
+      { x: 0, z: 0, w: 26, d: 26, main: true },
+      { x: 0, z: -G, w: 20, d: 18 },
+      { x: 0, z: G, w: 20, d: 18 },
+      { x: -G, z: 0, w: 18, d: 20 },
+      { x: G, z: 0, w: 18, d: 20 },
+      { x: -G, z: -G, w: 16, d: 16 },
+      { x: G, z: -G, w: 16, d: 16 },
+      { x: -G, z: G, w: 16, d: 16 },
+      { x: G, z: G, w: 16, d: 16 }
+    ];
+
+    isl.forEach(function (is, i) {
+      out.push({ p: [is.x, -3, is.z], s: [is.w, 3, is.d], c: is.main ? "#7ab55c" : "#6fa04e" });
+      out.push({ p: [is.x, 0, is.z], s: [is.w * 0.34, 1.1 + rand() * 0.9, is.d * 0.34], c: ["#c9a86a", "#b8975a", "#8a6f45"][i % 3] });
+      if (rand() < 0.85) out.push({ p: [is.x - is.w * 0.26, 0, is.z + is.d * 0.22], s: [2.8, 3.4 + rand() * 2.6, 2.8], c: "#5d7a3a" });
+      if (rand() < 0.7) out.push({ p: [is.x + is.w * 0.28, 0, is.z - is.d * 0.22], s: [2.4, 2.8 + rand() * 2.2, 2.4], c: "#7f6a44" });
+      waypoints.push([is.x, is.z], [is.x + is.w * 0.25, is.z + is.d * 0.25], [is.x - is.w * 0.25, is.z - is.d * 0.25]);
     });
 
-    /* Puentes en L: dos tramos que se cruzan y que solapan las dos islas, asi que
-       SIEMPRE hay camino continuo. La superficie queda al mismo nivel que las islas
-       para que nadie tenga que saltar. */
-    function link(a, b, color) {
-      out.push({ p: [(a.x + b.x) / 2, -1.2, a.z], s: [Math.abs(b.x - a.x) + 10, 1.2, 9], c: color });
-      out.push({ p: [b.x, -1.2, (a.z + b.z) / 2], s: [9, 1.2, Math.abs(b.z - a.z) + 10], c: color });
+    /* Pasarelas finas de borde a borde: solo 4,5 m de ancho y 1 m de solape,
+       de modo que se ven las islas separadas y el vacio entre ellas. */
+    var W = 4.5;
+    function deckX(x1, x2, z, color) {
+      out.push({ p: [(x1 + x2) / 2, -1.2, z], s: [Math.abs(x2 - x1) + 2, 1.2, W], c: color });
+      waypoints.push([(x1 + x2) / 2, z], [x1, z], [x2, z]);
     }
-    for (var k = 1; k <= RING; k++) link(islands[0], islands[k], "#a8834f");
-    for (var n = 1; n <= RING; n++) link(islands[n], islands[n % RING + 1], "#b08a52");
+    function deckZ(z1, z2, x, color) {
+      out.push({ p: [x, -1.2, (z1 + z2) / 2], s: [W, 1.2, Math.abs(z2 - z1) + 2], c: color });
+      waypoints.push([x, (z1 + z2) / 2], [x, z1], [x, z2]);
+    }
+    function edges(is, axis) {
+      return axis === "x" ? [is.x - is.w / 2, is.x + is.w / 2] : [is.z - is.d / 2, is.z + is.d / 2];
+    }
+    // Centro hacia los cuatro lados
+    deckZ(edges(isl[0], "z")[0], edges(isl[1], "z")[1], 0, "#a8834f");
+    deckZ(edges(isl[0], "z")[1], edges(isl[2], "z")[0], 0, "#a8834f");
+    deckX(edges(isl[0], "x")[0], edges(isl[3], "x")[1], 0, "#a8834f");
+    deckX(edges(isl[0], "x")[1], edges(isl[4], "x")[0], 0, "#a8834f");
+    // Esquinas: enlace con la isla de su lado
+    deckX(edges(isl[1], "x")[0], edges(isl[5], "x")[1], -G, "#b08a52");
+    deckX(edges(isl[1], "x")[1], edges(isl[6], "x")[0], -G, "#b08a52");
+    deckX(edges(isl[2], "x")[0], edges(isl[7], "x")[1], G, "#b08a52");
+    deckX(edges(isl[2], "x")[1], edges(isl[8], "x")[0], G, "#b08a52");
+    deckZ(edges(isl[3], "z")[0], edges(isl[5], "z")[1], -G, "#b08a52");
+    deckZ(edges(isl[3], "z")[1], edges(isl[7], "z")[0], -G, "#b08a52");
+    deckZ(edges(isl[4], "z")[0], edges(isl[6], "z")[1], G, "#b08a52");
+    deckZ(edges(isl[4], "z")[1], edges(isl[8], "z")[0], G, "#b08a52");
 
     B.MAPS.push(finish(606, {
-      id: "islas", name: "Islas Flotantes", tagline: "Plataformas sobre el vacio unidas por pasarelas: salirse del camino es caer fuera de la arena.",
-      size: size, structures: out, ground: false, voidY: -17,
+      id: "islas", name: "Islas Flotantes", tagline: "Nueve islas separadas por el vacio, unidas por pasarelas estrechas. Salirse del camino es caer fuera de la arena.",
+      size: size, structures: out, waypoints: waypoints, ground: false, voidY: -17,
       theme: { skyTop: "#4a9fe0", sky: "#a8d8f0", fog: "#cfe9f7", fogNear: 70, fogFar: 265, sun: "#ffffff", sunIntensity: 1.1, ambient: "#dff0ff", ambientIntensity: 0.44, hemi: 0.7, base: "#7ab55c", edge: "#6fa04e" },
       hazards: [], swatch: ["#7ab55c", "#c9a86a", "#a8d8f0"]
     }));
