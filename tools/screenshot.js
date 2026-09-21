@@ -220,6 +220,15 @@ Client.prototype.shot = function (file, quality) {
     await sleep(2600);
     shots.push({ name: 'captura-francotirador.png', size: await client.shot(path.join(OUT, 'captura-francotirador.png')) });
 
+    /* 6. Islas Flotantes: pasarelas que conectan todo el terreno */
+    await goto('http://127.0.0.1:' + PORT + '/index.html?auto=survival&map=islas&bots=6&third=1', 6000,
+      'window.BLITZ.debug && window.BLITZ.debug.game.state === "playing"');
+    await client.evaluate('(function(){var g=window.BLITZ.debug.game,p=g.player;' +
+      'p.alive=true;p.invuln=99999;p.thirdPerson=true;p.cameraDist=26;p.pos.x=0;p.pos.y=14;p.pos.z=30;' +
+      'p.yaw=3.14;p.pitch=-0.5;window.BLITZ.Input.mouse=function(){return false;};return 1;})()');
+    await sleep(1600);
+    shots.push({ name: 'captura-islas.png', size: await client.shot(path.join(OUT, 'captura-islas.png')) });
+
     /* Diagnostico del navegador */
     var diag = await client.evaluate('(function(){var d=window.BLITZ&&window.BLITZ.debug;if(!d)return "sin debug";var g=d.game;var v=g.vmRoot;return JSON.stringify({modo:g.mode.id,mapa:g.map.id,estado:g.state,entidades:g.entities.length,vivos:g.entities.filter(function(e){return e.alive;}).length,hud:!document.getElementById("hud").hidden,armaVisible:!!(v&&v.visible),piezasArma:v?v.children.length:0});})()');
     var errs = client.events.filter(function (e) {

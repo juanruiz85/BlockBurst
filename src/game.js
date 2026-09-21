@@ -521,6 +521,38 @@
     return hits;
   };
 
+  /* Hueco transitable delante (para saltar) o -1 si no hay suelo alcanzable */
+  Game.prototype.gapAhead = function (ent, dx, dz) {
+    var maxGap = 3.4;
+    var gap = 0;
+    for (var d = 1.0; d <= maxGap + 1.2; d += 0.4) {
+      var x = ent.pos.x + dx * d, z = ent.pos.z + dz * d;
+      var solid = false;
+      if (this.world.rampHeightAt(x, z) != null) solid = true;
+      else {
+        for (var dy = 0.5; dy <= 1.5; dy += 0.5) {
+          if (this.world.pointSolid(x, ent.pos.y - dy, z)) { solid = true; break; }
+        }
+      }
+      if (solid) return gap;
+      gap += 0.4;
+    }
+    return -1;
+  };
+
+  /* Punto al que deben acudir los bots en los modos con objetivo */
+  Game.prototype.objectivePoint = function () {
+    var m = this.mode;
+    if (!m) return null;
+    if (m.id === "koth" && this.hill) return { x: this.hill.x, z: this.hill.z, r: this.hill.r };
+    if (m.id === "ctf" && this.flags) {
+      var enemy = this.player.team === "blue" ? "red" : "blue";
+      var f = this.flags[enemy];
+      if (f && f.mesh) return { x: f.mesh.position.x, z: f.mesh.position.z, r: 3 };
+    }
+    return null;
+  };
+
   /* Evita que un bot camine hacia el vacio (islas flotantes y bordes) */
   Game.prototype.ledgeAhead = function (ent, dx, dz) {
     var x = ent.pos.x + dx * 1.25;
@@ -749,6 +781,22 @@
     var vx = ice ? p.vel.x : wishX * speed;
     var vz = ice ? p.vel.z : wishZ * speed;
 
+    // Impulso del ataque cuerpo a cuerpo (da sensacion de zancada)
+    if (p.lungeT > 0) {
+      var lk = p.lungeT / 0.18;
+      vx += p.lungeX * lk;
+      vz += p.lungeZ * lk;
+      p.lungeT = Math.max(0, p.lungeT - dt);
+    }
+
+    // Golpe de katana pendiente: se resuelve al llegar el tajo
+    if (p.meleeTimer > 0) {
+      p.meleeTimer -= dt;
+      if (p.meleeTimer <= 0 && !this.netClient) {
+        this.meleeAttack(p, B.Weapon.byId(p.meleeWeapon || p.weapon));
+      }
+    }
+
     var wantJump = I.down("Space");
     this.netInputAxis = axis;
     this.netWantJump = wantJump;
@@ -822,10 +870,17 @@
 
     if (def.kind === "melee") {
       B.Audio.melee();
-      if (!this.netClient) this.meleeAttack(p, def);
       p.cooldown = 60 / def.rpm;
       this.vmKick = 0.18;
-      this.vmSwing = 0.32;
+      this.vmSwing = def.swingTime || 0.34;
+      // El golpe se aplica al llegar el tajo, no al pulsar
+      p.meleeTimer = def.hitAt || 0.14;
+      p.meleeWeapon = p.weapon;
+      // Pequeño impulso hacia delante al atacar
+      var fw = { x: -Math.sin(p.yaw), z: -Math.cos(p.yaw) };
+      p.lungeT = 0.18;
+      p.lungeX = fw.x * (def.lunge || 7);
+      p.lungeZ = fw.z * (def.lunge || 7);
       return;
     }
 
@@ -1408,8 +1463,13 @@
     var bob2 = Math.cos(p.bob * 2) * Math.min(0.02, sp * 0.003);
 
     this.vmKick = Math.max(0, (this.vmKick || 0) - dt * 1.6);
-    this.vmSwing = Math.max(0, (this.vmSwing || 0) - dt * 3.2);
-    var swing = this.vmSwing > 0 ? Math.sin((1 - this.vmSwing / 0.32) * Math.PI) : 0;
+    var swDef = B.Weapon.byId(p.weapon);
+    var swTime = swDef.swingTime || 0.34;
+    this.vmSwing = Math.max(0, (this.vmSwing || 0) - dt);
+    var swingT = this.vmSwing > 0 ? (1 - this.vmSwing / swTime) : 0;
+    var slash = this.vmSwing > 0 ? Math.sin(swingT * Math.PI) : 0;
+    var swYaw = swingT > 0 ? (0.95 - swingT * 1.9) * slash : 0;
+    var swRoll = swingT > 0 ? (0.5 - swingT * 0.95) * slash : 0;
     var reloadDip = p.reloading > 0 ? Math.sin(Math.min(1, p.reloading / B.Weapon.byId(p.weapon).reload) * Math.PI) * 0.28 : 0;
 
     var tx = 0.3 - ads * 0.26 + _swayX;
@@ -1417,7 +1477,7 @@
     var tz = -0.62 + this.vmKick * 0.35 + bob2;
 
     this.vmRoot.position.set(tx, ty, tz);
-    this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9 - swing * 0.22, ads * 0.02 + _swayY * 0.5 + swing * 1.15, swing * 0.55);
+    this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9 - slash * 0.28, ads * 0.02 + _swayY * 0.5 + swYaw, swRoll);
 
     if (this.muzzleTimer > 0) {
       this.muzzleTimer -= dt;

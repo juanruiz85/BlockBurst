@@ -408,6 +408,70 @@ function gameplayChecks() {
   var fell = g4.voidFalls || 0;
   check("islas flotantes: los bots no se caen al vacio", recovered <= 1 && fell === 0,
     "recuperados " + recovered + ", caidos " + fell);
+
+  // --- Islas Flotantes: una sola masa transitable (sin plataformas sueltas) ---
+  var islas = B.mapById("islas");
+  var sizes = islas.clusterSizes || [];
+  var totalCells = sizes.reduce(function (acc, v) { return acc + (v || 0); }, 0) || 1;
+  var big = sizes.reduce(function (acc, v) { return Math.max(acc, v || 0); }, 0);
+  check("islas flotantes: el terreno transitable es una sola masa",
+    (big / totalCells) >= 0.93,
+    "la zona mayor es el " + Math.round(100 * big / totalCells) + "% de " + totalCells + " celdas (zonas: " + islas.clusterCount + ")");
+
+  // --- Katana: tajo con golpe retardado, zancada y ataque mantenido ---
+  check("katana: tajo con golpe al llegar y zancada hacia delante",
+    katana.swingTime > 0 && katana.hitAt > 0 && katana.lunge > 0 && katana.auto === true,
+    "tajo " + katana.swingTime + " s, golpe a los " + katana.hitAt + " s, zancada " + katana.lunge);
+
+  // --- Zombis: no deben atacarse entre ellos ---
+  var g5 = new B.Game();
+  g5.initRenderer(new El("canvas"));
+  g5.onFinish = function () { };
+  g5.start({ modeId: "survival", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Tu" });
+  g5.player.pos.x = 42; g5.player.pos.z = 42;
+  for (var z1 = 0; z1 < 60 * 12; z1++) g5.update(1 / 60);
+  var zombis = g5.entities.filter(function (e) { return e.kind === "zombie" && e.alive; });
+  var entreEllos = zombis.filter(function (z) { return z.target && z.target.kind === "zombie"; }).length;
+  var heridos = zombis.filter(function (z) { return z.health < z.maxHealth * 1.9 * 0.9; }).length;
+  check("los zombis no se atacan entre ellos",
+    entreEllos === 0 && heridos <= 1,
+    "zombis apuntandose entre si " + entreEllos + ", heridos " + heridos + " de " + zombis.length);
+
+  // --- Rey de la colina: apariciones repartidas y bots que acuden al objetivo ---
+  var g6 = new B.Game();
+  g6.initRenderer(new El("canvas"));
+  g6.onFinish = function () { };
+  g6.start({ modeId: "koth", mapId: "distrito", bots: 8, difficulty: "normal", fov: 80, name: "Tu" });
+  var viv = g6.entities.filter(function (e) { return e.alive; });
+  var minD = 1e9;
+  for (var a = 0; a < viv.length; a++) {
+    for (var bb = a + 1; bb < viv.length; bb++) {
+      minD = Math.min(minD, B.dist(viv[a].pos.x, viv[a].pos.z, viv[bb].pos.x, viv[bb].pos.z));
+    }
+  }
+  check("rey de la colina: cada jugador aparece separado",
+    minD >= 8, "distancia minima entre dos apariciones " + Math.round(minD) + " u");
+
+  var hillRef = g6.hill;
+  var links = (g6.map.wpLinks || []).reduce(function (acc, l) { return acc + l.length; }, 0);
+  var botsIni = g6.entities.filter(function (e) { return e.isBot && e.alive; });
+  var mediaAntes = botsIni.length
+    ? botsIni.reduce(function (acc, e) { return acc + B.dist(e.pos.x, e.pos.z, hillRef.x, hillRef.z); }, 0) / botsIni.length
+    : 0;
+
+  for (var k2 = 0; k2 < 60 * 14; k2++) g6.update(1 / 60);
+  var hill = g6.hill;
+  var cerca = g6.entities.filter(function (e) {
+    return e.isBot && e.alive && B.dist(e.pos.x, e.pos.z, hill.x, hill.z) < hill.r + 18;
+  }).length;
+  var vivos = g6.entities.filter(function (e) { return e.isBot && e.alive; });
+  var mediaDespues = vivos.length
+    ? vivos.reduce(function (acc, e) { return acc + B.dist(e.pos.x, e.pos.z, hill.x, hill.z); }, 0) / vivos.length
+    : 0;
+  check("rey de la colina: los bots acuden al objetivo",
+    cerca >= 3 || (mediaDespues < mediaAntes * 0.7 && vivos.length > 0),
+    "distancia media a la colina " + Math.round(mediaAntes) + " -> " + Math.round(mediaDespues) +
+    " u, cerca " + cerca + " de " + vivos.length + " vivos, enlaces de ruta " + links);
 }
 
 /* --------------------- protocolo de red (sin WebRTC) --------------------- */

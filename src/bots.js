@@ -30,24 +30,27 @@
 
   function eyePos(ent) { return { x: ent.pos.x, y: ent.pos.y + ent.eye, z: ent.pos.z }; }
 
+  /* Aparicion lo mas separada posible de cualquier otro jugador (de cualquier bando) */
   function spawnPointFor(game, team) {
     var m = game.map;
     var list = m.spawns;
     var best = null, bestScore = -1;
-    for (var i = 0; i < 10; i++) {
-      var s = list[B.randInt(0, list.length - 1)];
+    var start = B.randInt(0, Math.max(0, list.length - 1));
+    for (var i = 0; i < list.length; i++) {
+      var s = list[(start + i) % list.length];
       var x = s[0], z = s[1];
       if (game.world.pointSolid(x, (s[2] || 0) + 0.6, z)) continue;
-      var d = 999;
+      var d = 1e9;
       for (var j = 0; j < game.entities.length; j++) {
         var e = game.entities[j];
         if (!e.alive) continue;
-        if (team && e.team === team) { d = -1; break; }
         d = Math.min(d, B.dist(x, z, e.pos.x, e.pos.z));
       }
+      if (d === 1e9) d = 999;
       if (d > bestScore) { bestScore = d; best = s; }
-      if (bestScore > 26) break;
+      if (bestScore > 46) break;
     }
+    void team;
     return best || list[0];
   }
 
@@ -56,15 +59,53 @@
     spawnPointFor: spawnPointFor,
     eyePos: eyePos,
 
+    /* Siguiente punto del camino hacia un destino usando el grafo de rutas */
+    pathStep: function (game, fromX, fromZ, toX, toZ) {
+      var map = game.map;
+      var wps = map.waypoints, links = map.wpLinks;
+      if (!links || !wps || !wps.length) return { x: toX, z: toZ };
+      if (map.clearLine && map.clearLine(fromX, fromZ, toX, toZ)) return { x: toX, z: toZ };
+
+      var startIdx = -1, goalIdx = -1, sd = 1e9, gd = 1e9;
+      for (var i = 0; i < wps.length; i++) {
+        var ds = B.dist2(wps[i][0], wps[i][1], fromX, fromZ);
+        if (ds < sd) { sd = ds; startIdx = i; }
+        var dg = B.dist2(wps[i][0], wps[i][1], toX, toZ);
+        if (dg < gd) { gd = dg; goalIdx = i; }
+      }
+      if (startIdx < 0 || goalIdx < 0) return { x: toX, z: toZ };
+      if (startIdx === goalIdx) return { x: toX, z: toZ };
+
+      var n = wps.length;
+      var prev = new Int32Array(n).fill(-1);
+      var seen = new Uint8Array(n);
+      var queue = [startIdx];
+      seen[startIdx] = 1;
+      var found = false;
+      for (var qi = 0; qi < queue.length; qi++) {
+        var cur = queue[qi];
+        if (cur === goalIdx) { found = true; break; }
+        var nb = links[cur] || [];
+        for (var k = 0; k < nb.length; k++) {
+          if (!seen[nb[k]]) { seen[nb[k]] = 1; prev[nb[k]] = cur; queue.push(nb[k]); }
+        }
+      }
+      if (!found) return { x: toX, z: toZ };
+      var node = goalIdx;
+      while (prev[node] !== -1 && prev[node] !== startIdx) node = prev[node];
+      return { x: wps[node][0], z: wps[node][1] };
+    },
+
     create: function (game, opts) {
       opts = opts || {};
       var kind = opts.kind || "soldier";
-      var preset = PRESETS[opts.difficulty] || PRESETS.normal;
-      var team = opts.team || null;
-      var sp = spawnPointFor(game, team);
-      var weaponId = kind === "zombie" ? "katana" : (opts.weapon || B.pick(WEAPON_POOL));
-      var def = B.Weapon.byId(weaponId);
       var isZ = kind === "zombie";
+      var preset = PRESETS[opts.difficulty] || PRESETS.normal;
+      // Los zombis forman su propio bando: asi no se atacan entre ellos
+      var team = isZ ? "zombie" : (opts.team || null);
+      var sp = spawnPointFor(game, team);
+      var weaponId = isZ ? "katana" : (opts.weapon || B.pick(WEAPON_POOL));
+      var def = B.Weapon.byId(weaponId);
 
       var avatar = B.Avatar.build({
         team: team,
@@ -178,6 +219,23 @@
         if (bot.health < bot.maxHealth * 0.4 && bot.def.kind !== "melee") fwd = -Math.abs(fwd) - 0.35;
         wishX = nx * fwd + sx * preset.strafe;
         wishZ = nz * fwd + sz * preset.strafe;
+        // En los modos con objetivo, avanza hacia el mientras combate
+        var objE = game.objectivePoint ? game.objectivePoint() : null;
+        if (objE) {
+          var od = B.dist(bot.pos.x, bot.pos.z, objE.x, objE.z);
+          if (od > (objE.r || 6) + 3) {
+            // Avanza decidido al objetivo mientras dispara, siguiendo las calles
+            bot.objNavTimer = (bot.objNavTimer || 0) - dt;
+            if (!bot.objNav || bot.objNavTimer <= 0) {
+              bot.objNav = B.Bots.pathStep(game, bot.pos.x, bot.pos.z, objE.x, objE.z);
+              bot.objNavTimer = 0.6;
+            }
+            var oxn = bot.objNav.x - bot.pos.x, ozn = bot.objNav.z - bot.pos.z;
+            var on = Math.hypot(oxn, ozn) || 1;
+            wishX = wishX * 0.35 + (oxn / on) * 0.95;
+            wishZ = wishZ * 0.35 + (ozn / on) * 0.95;
+          }
+        }
         var l = Math.hypot(wishX, wishZ);
         if (l > 1) { wishX /= l; wishZ /= l; }
         if (bot.def.kind === "melee") speed *= 1.12;
@@ -185,6 +243,12 @@
         // Deambular entre waypoints
         var wps = game.map.waypoints;
         if (!bot.waypoint) {
+          var obj = game.objectivePoint ? game.objectivePoint() : null;
+          if (obj && Math.random() < 0.85) {
+            // En los modos con objetivo, la mayoria acude a disputarlo
+            bot.waypoint = { x: obj.x + B.rand(-6, 6), z: obj.z + B.rand(-6, 6) };
+            bot.waypointToObjective = true;
+          } else {
           // Elige ruta dentro de la misma isla o plataforma conectada
           var myCluster = game.map.clusterAt ? game.map.clusterAt(bot.pos.x, bot.pos.z) : -1;
           var cands = null;
@@ -197,11 +261,24 @@
           if (!cands || !cands.length) cands = wps;
           var cand = cands[B.randInt(0, cands.length - 1)];
           bot.waypoint = { x: cand[0] + B.rand(-3, 3), z: cand[1] + B.rand(-3, 3) };
+          }
         }
         var wx = bot.waypoint.x - bot.pos.x, wz = bot.waypoint.z - bot.pos.z;
         var wd = Math.hypot(wx, wz);
         if (wd < 2.4) bot.waypoint = null;
-        else { wishX = wx / wd; wishZ = wz / wd; }
+        else {
+          // Sigue el grafo de rutas en vez de ir en linea recta contra las paredes
+          bot.navTimer = (bot.navTimer || 0) - dt;
+          if (!bot.navTarget || bot.navTimer <= 0) {
+            bot.navTarget = B.Bots.pathStep(game, bot.pos.x, bot.pos.z, bot.waypoint.x, bot.waypoint.z);
+            bot.navTimer = 0.45;
+          }
+          var nx2 = bot.navTarget.x - bot.pos.x, nz2 = bot.navTarget.z - bot.pos.z;
+          var nd = Math.hypot(nx2, nz2) || 1;
+          wishX = nx2 / nd;
+          wishZ = nz2 / nd;
+        }
+        void wd;
       }
 
       // ---- Evasión de obstaculos y peligros ----
@@ -219,15 +296,21 @@
         var wl = Math.hypot(wishX, wishZ) || 1;
         var ux = wishX / wl, uz = wishZ / wl;
         if (game.ledgeAhead(bot, ux, uz)) {
-          var side = bot.strafeDir || 1;
-          var ang = side * 1.1;
-          var c1x = ux * Math.cos(ang) - uz * Math.sin(ang);
-          var c1z = ux * Math.sin(ang) + uz * Math.cos(ang);
-          var c2x = ux * Math.cos(-ang) - uz * Math.sin(-ang);
-          var c2z = ux * Math.sin(-ang) + uz * Math.cos(-ang);
-          if (!game.ledgeAhead(bot, c1x, c1z)) { wishX = c1x; wishZ = c1z; }
-          else if (!game.ledgeAhead(bot, c2x, c2z)) { wishX = c2x; wishZ = c2z; }
-          else { wishX = -ux; wishZ = -uz; }
+          var gap = game.gapAhead ? game.gapAhead(bot, ux, uz) : -1;
+          if (gap > 0 && gap <= 2.4) {
+            // Hueco corto: se salta en vez de rodearlo
+            wantJump = true;
+          } else {
+            var side = bot.strafeDir || 1;
+            var ang = side * 1.1;
+            var c1x = ux * Math.cos(ang) - uz * Math.sin(ang);
+            var c1z = ux * Math.sin(ang) + uz * Math.cos(ang);
+            var c2x = ux * Math.cos(-ang) - uz * Math.sin(-ang);
+            var c2z = ux * Math.sin(-ang) + uz * Math.cos(-ang);
+            if (!game.ledgeAhead(bot, c1x, c1z)) { wishX = c1x; wishZ = c1z; }
+            else if (!game.ledgeAhead(bot, c2x, c2z)) { wishX = c2x; wishZ = c2z; }
+            else { wishX = -ux; wishZ = -uz; }
+          }
         }
       }
 

@@ -355,6 +355,37 @@
     }
     var wpClusters = waypoints.map(function (w) { return clusterAt(w[0], w[1]); });
 
+    /* Grafo de rutas: une waypoints con linea de vista a la altura de los ojos.
+       Es lo que permite a los bots recorrer las calles en vez de pegarse a las paredes. */
+    function clearLine(ax, az, bx, bz) {
+      var steps = Math.max(2, Math.ceil(B.dist(ax, az, bx, bz) / 1.3));
+      for (var s = 1; s < steps; s++) {
+        var t = s / steps;
+        var x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+        for (var bi = 0; bi < fboxes.length; bi++) {
+          var b = fboxes[bi];
+          if (x > b.minX - 0.35 && x < b.maxX + 0.35 && z > b.minZ - 0.35 && z < b.maxZ + 0.35 &&
+              b.maxY > 1.1 && b.minY < 2.1) return false;
+        }
+      }
+      return true;
+    }
+    var wpLinks = waypoints.map(function () { return []; });
+    for (var la = 0; la < waypoints.length; la++) {
+      for (var lb = la + 1; lb < waypoints.length; lb++) {
+        if (wpClusters[la] !== wpClusters[lb]) continue;
+        var dd = B.dist(waypoints[la][0], waypoints[la][1], waypoints[lb][0], waypoints[lb][1]);
+        if (dd > 18) continue;
+        if (!clearLine(waypoints[la][0], waypoints[la][1], waypoints[lb][0], waypoints[lb][1])) continue;
+        wpLinks[la].push(lb);
+        wpLinks[lb].push(la);
+      }
+    }
+    var clusterSizes = [];
+    for (var sc = 0; sc < grid.length; sc++) {
+      if (grid[sc] >= 0) clusterSizes[grid[sc]] = (clusterSizes[grid[sc]] || 0) + 1;
+    }
+
     return {
       id: cfg.id, name: cfg.name, tagline: cfg.tagline, size: cfg.size,
       theme: cfg.theme, ground: hasGround,
@@ -365,7 +396,8 @@
       gravity: cfg.gravity == null ? 22 : cfg.gravity,
       voidY: cfg.voidY == null ? -14 : cfg.voidY,
       spawns: spawns, waypoints: waypoints, pickupNodes: pickups,
-      wpClusters: wpClusters, clusterAt: clusterAt, clusterCount: nextCluster,
+      wpClusters: wpClusters, clusterAt: clusterAt, clusterCount: nextCluster, clusterSizes: clusterSizes,
+      wpLinks: wpLinks, clearLine: clearLine,
       objectives: {
         flags: { red: [redP[0], redP[1]], blue: [blueP[0], blueP[1]], redY: redP[2], blueY: blueP[2] },
         hill: { x: hillP[0], z: hillP[1], y: hillP[2], r: 7.5 }
@@ -518,36 +550,35 @@
 
   /* ---------------------- 6. Islas Flotantes (vacio) -------------------- */
   (function () {
-    var size = 108;
+    var size = 112;
     var rand = B.rng(606);
     var out = [];
-    var centers = [[-32, -30], [0, 0], [32, 30], [-32, 32], [34, -32], [0, -44], [0, 44], [-44, 0], [44, 0]];
-    centers.forEach(function (c, i) {
-      var w = i === 1 ? 26 : 17 + rand() * 6;
-      var d = i === 1 ? 26 : 17 + rand() * 6;
-      out.push({ p: [c[0], -3, c[1]], s: [w, 3, d], c: i === 1 ? "#7ab55c" : "#6fa04e" });
-      out.push({ p: [c[0], 0, c[1]], s: [w * 0.45, 1.2 + rand() * 1.2, d * 0.45], c: ["#c9a86a", "#b8975a", "#8a6f45"][i % 3] });
-      if (rand() < 0.75) out.push({ p: [c[0] - w * 0.28, 0, c[1] + d * 0.24], s: [3, 4 + rand() * 4, 3], c: "#5d7a3a" });
-      if (rand() < 0.65) out.push({ p: [c[0] + w * 0.3, 0, c[1] - d * 0.24], s: [2.6, 3 + rand() * 3, 2.6], c: "#7f6a44" });
+    var RING = 6;
+    var RAD = 30;
+    var islands = [{ x: 0, z: 0, w: 28, d: 28 }];
+    for (var r = 0; r < RING; r++) {
+      var ang = (r / RING) * Math.PI * 2 - Math.PI / 2;
+      islands.push({ x: Math.cos(ang) * RAD, z: Math.sin(ang) * RAD, w: 19, d: 19 });
+    }
+    islands.forEach(function (is, i) {
+      out.push({ p: [is.x, -3, is.z], s: [is.w, 3, is.d], c: i === 0 ? "#7ab55c" : "#6fa04e" });
+      out.push({ p: [is.x, 0, is.z], s: [is.w * 0.4, 1.2 + rand() * 1.0, is.d * 0.4], c: ["#c9a86a", "#b8975a", "#8a6f45"][i % 3] });
+      if (rand() < 0.8) out.push({ p: [is.x - is.w * 0.28, 0, is.z + is.d * 0.24], s: [3, 4 + rand() * 3, 3], c: "#5d7a3a" });
+      if (rand() < 0.7) out.push({ p: [is.x + is.w * 0.3, 0, is.z - is.d * 0.24], s: [2.6, 3 + rand() * 2.5, 2.6], c: "#7f6a44" });
     });
-    // Puentes anchos entre islas, formando una red transitable
-    out.push({ p: [0, -1.6, -21], s: [8, 1, 22], c: "#a8834f" });
-    out.push({ p: [0, -1.6, 21], s: [8, 1, 22], c: "#a8834f" });
-    out.push({ p: [-21, -1.6, 0], s: [22, 1, 8], c: "#a8834f" });
-    out.push({ p: [21, -1.6, 0], s: [22, 1, 8], c: "#a8834f" });
-    // Diagonales del anillo exterior
-    out.push({ p: [-29, -1.6, -29], s: [22, 1, 8], c: "#b08a52" });
-    out.push({ p: [32, -1.6, 31], s: [20, 1, 7], c: "#b08a52" });
-    out.push({ p: [-21, -1.6, 30], s: [20, 1, 7], c: "#b08a52" });
-    out.push({ p: [21, -1.6, -30], s: [20, 1, 7], c: "#b08a52" });
-    // Plataformas de descanso intermedias para no tener saltos largos
-    out.push({ p: [-18, -2.2, -18], s: [9, 2.2, 9], c: "#7ab55c" });
-    out.push({ p: [18, -2.2, 18], s: [9, 2.2, 9], c: "#7ab55c" });
-    out.push({ p: [-18, -2.2, 18], s: [9, 2.2, 9], c: "#6fa04e" });
-    out.push({ p: [18, -2.2, -18], s: [9, 2.2, 9], c: "#6fa04e" });
+
+    /* Puentes en L: dos tramos que se cruzan y que solapan las dos islas, asi que
+       SIEMPRE hay camino continuo. La superficie queda al mismo nivel que las islas
+       para que nadie tenga que saltar. */
+    function link(a, b, color) {
+      out.push({ p: [(a.x + b.x) / 2, -1.2, a.z], s: [Math.abs(b.x - a.x) + 10, 1.2, 9], c: color });
+      out.push({ p: [b.x, -1.2, (a.z + b.z) / 2], s: [9, 1.2, Math.abs(b.z - a.z) + 10], c: color });
+    }
+    for (var k = 1; k <= RING; k++) link(islands[0], islands[k], "#a8834f");
+    for (var n = 1; n <= RING; n++) link(islands[n], islands[n % RING + 1], "#b08a52");
 
     B.MAPS.push(finish(606, {
-      id: "islas", name: "Islas Flotantes", tagline: "Plataformas sobre el vacio: un paso en falso y caes fuera de la arena.",
+      id: "islas", name: "Islas Flotantes", tagline: "Plataformas sobre el vacio unidas por pasarelas: salirse del camino es caer fuera de la arena.",
       size: size, structures: out, ground: false, voidY: -17,
       theme: { skyTop: "#4a9fe0", sky: "#a8d8f0", fog: "#cfe9f7", fogNear: 70, fogFar: 265, sun: "#ffffff", sunIntensity: 1.1, ambient: "#dff0ff", ambientIntensity: 0.44, hemi: 0.7, base: "#7ab55c", edge: "#6fa04e" },
       hazards: [], swatch: ["#7ab55c", "#c9a86a", "#a8d8f0"]

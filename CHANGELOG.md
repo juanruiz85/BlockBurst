@@ -1,5 +1,34 @@
 # Historial de cambios
 
+## v0.5.0 - Katana, bots que navegan y mapa de islas
+
+### Katana
+- El tajo es ahora un movimiento completo: **el golpe se aplica al llegar la hoja**, no al
+  pulsar; el arma barre de derecha a izquierda y el ataque da una **pequeña zancada** hacia
+  delante. Se puede **mantener pulsado** para encadenar tajos.
+
+### Bots
+- **Navegacion por rutas**: los bots ya no se pegan a las paredes. El mapa construye un grafo
+  de calles con linea de vista y los bots lo siguen para llegar a su destino.
+- **Acuden al objetivo**: en Rey de la colina van a la zona central y en Captura la bandera a
+  por la bandera rival (medido: distancia media a la colina de 43 a 29 u en 14 s).
+- **Apariciones repartidas**: antes se sorteaban diez puntos al azar y podian salir juntos.
+  Ahora se evaluan todos los puntos y se elige el mas alejado de cualquier jugador vivo
+  (distancia minima medida entre dos apariciones: 25-30 u).
+- **Zombis de un mismo bando**: ya no se atacan entre ellos.
+- **Saltan huecos cortos**: si el camino tiene un salto de menos de unos 2,4 m, saltan en vez
+  de rodearlo.
+
+### Mapa
+- **Islas Flotantes rehecho**: siete islas unidas por pasarelas en L que solapan las
+  plataformas, de modo que todo el terreno es una sola masa transitable (antes habia saltos
+  que los zombis no podian salvar). Verificado: el 100% del terreno transitable esta conectado.
+
+### Pruebas
+- Nuevas comprobaciones automaticas: zombis sin fuego amigo, apariciones separadas, bots que
+  acuden al objetivo en Rey de la colina, terreno conectado en las islas y tajo de la katana
+  con golpe retardado y zancada.
+
 ## v0.4.0 - Armas, bots y mapa
 
 ### Armas

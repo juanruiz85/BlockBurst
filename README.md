@@ -133,7 +133,11 @@ Notas de comportamiento:
 - El **francotirador** tiene **zoom al apuntar** (clic derecho) con su propia mira, y un tiro
   en la cabeza es **muerte segura** aunque el rival lleve escudo completo.
 - La **katana** es un **barrido** cuerpo a cuerpo: alcanza a varios enemigos a la vez dentro
-  del cono frontal y tambien abre barriles. No gasta municion.
+  del cono frontal, el golpe entra cuando llega la hoja, da una zancada hacia delante y se
+  puede mantener pulsado para encadenar tajos. No gasta municion.
+- Los **bots** recorren el mapa siguiendo las calles (grafo de rutas) y en los modos con
+  objetivo (Rey de la colina, Captura la bandera) van a disputarlo en vez de quedarse dando
+  vueltas. Aparecen siempre repartidos por el mapa.
 
 Los barriles rojos explotan si les disparas y hacen dano en area a todo el mundo.
 
