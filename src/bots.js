@@ -30,11 +30,34 @@
 
   function eyePos(ent) { return { x: ent.pos.x, y: ent.pos.y + ent.eye, z: ent.pos.z }; }
 
-  /* Aparicion lo mas separada posible de cualquier otro jugador (de cualquier bando) */
+  /* Punto de aparicion a una distancia concreta del jugador (para las oleadas de zombis) */
+  function spawnNear(game, want) {
+    var list = game.map.spawns;
+    var ref = (game.player && game.player.alive) ? game.player : null;
+    if (!ref) {
+      for (var i = 0; i < game.entities.length; i++) {
+        if (game.entities[i].alive) { ref = game.entities[i]; break; }
+      }
+    }
+    if (!ref) return spawnPointFor(game, "zombie");
+    var best = null, bestDiff = 1e9;
+    for (var j = 0; j < list.length; j++) {
+      var s = list[j];
+      if (game.world.pointSolid(s[0], (s[2] || 0) + 0.6, s[1])) continue;
+      var d = B.dist(s[0], s[1], ref.pos.x, ref.pos.z);
+      var diff = Math.abs(d - want);
+      if (diff < bestDiff) { bestDiff = diff; best = s; }
+    }
+    return best || list[0];
+  }
+
+  /* Aparicion repartida: se busca el punto mas cercano a una distancia jugable del rival
+     mas proximo. Asi nadie aparece apilado, pero tampoco en la otra punta del mapa. */
+  var IDEAL_SPAWN_DIST = 30;
   function spawnPointFor(game, team) {
     var m = game.map;
     var list = m.spawns;
-    var best = null, bestScore = -1;
+    var best = null, bestScore = -1e9;
     var start = B.randInt(0, Math.max(0, list.length - 1));
     for (var i = 0; i < list.length; i++) {
       var s = list[(start + i) % list.length];
@@ -46,9 +69,10 @@
         if (!e.alive) continue;
         d = Math.min(d, B.dist(x, z, e.pos.x, e.pos.z));
       }
-      if (d === 1e9) d = 999;
-      if (d > bestScore) { bestScore = d; best = s; }
-      if (bestScore > 46) break;
+      if (d === 1e9) d = IDEAL_SPAWN_DIST;
+      var score = -Math.abs(d - IDEAL_SPAWN_DIST) + B.rand(0, 0.5);
+      if (score > bestScore) { bestScore = score; best = s; }
+      if (bestScore > -0.4) break;
     }
     void team;
     return best || list[0];
@@ -57,6 +81,7 @@
   B.Bots = {
     presets: PRESETS,
     spawnPointFor: spawnPointFor,
+    spawnNear: spawnNear,
     eyePos: eyePos,
 
     /* Siguiente punto del camino hacia un destino usando el grafo de rutas */
@@ -103,7 +128,7 @@
       var preset = PRESETS[opts.difficulty] || PRESETS.normal;
       // Los zombis forman su propio bando: asi no se atacan entre ellos
       var team = isZ ? "zombie" : (opts.team || null);
-      var sp = spawnPointFor(game, team);
+      var sp = isZ ? spawnNear(game, 26) : spawnPointFor(game, team);
       var weaponId = isZ ? "katana" : (opts.weapon || B.pick(WEAPON_POOL));
       var def = B.Weapon.byId(weaponId);
 
@@ -171,6 +196,8 @@
       bot.percepTimer -= dt;
       if (bot.percepTimer <= 0) {
         bot.percepTimer = 0.18 + Math.random() * 0.14;
+        var isZ = bot.kind === "zombie";
+        var viewR = isZ ? preset.view * 2.4 : preset.view;
         var best = null, bestD = Infinity;
         for (var i = 0; i < game.entities.length; i++) {
           var e = game.entities[i];
@@ -178,10 +205,11 @@
           if (bot.team && e.team === bot.team) continue;
           if (e.invuln > 0) continue;
           var d = B.dist(bot.pos.x, bot.pos.z, e.pos.x, e.pos.z);
-          if (d > preset.view) continue;
+          if (d > viewR) continue;
           var dy = Math.abs((e.pos.y + e.height * 0.6) - (bot.pos.y + bot.eye));
           if (dy > 9) continue;
-          if (!B.Bots.visible(game, bot, e)) continue;
+          // Los zombis van a por el jugador aunque no lo vean; si no, se quedan dando vueltas
+          if (!isZ && !B.Bots.visible(game, bot, e)) continue;
           if (d < bestD) { bestD = d; best = e; }
         }
         if (best) {
@@ -201,6 +229,7 @@
       var wishX = 0, wishZ = 0;
       var wantJump = false;
       var speed = bot.speed;
+      bot.navigating = false;
 
       if (bot.target && bot.target.alive) {
         bot.state = "engage";
@@ -238,6 +267,21 @@
         }
         var l = Math.hypot(wishX, wishZ);
         if (l > 1) { wishX /= l; wishZ /= l; }
+
+        // Sin linea de vista (o trabado): rodea por las calles en vez de empujar la pared
+        bot.forceNav = Math.max(0, (bot.forceNav || 0) - dt);
+        if ((dist > 3 && !B.Bots.visible(game, bot, t)) || bot.forceNav > 0) {
+          bot.objNavTimer = (bot.objNavTimer || 0) - dt;
+          if (!bot.objNav || bot.objNavTimer <= 0 || bot.forceNav > 0) {
+            bot.objNav = B.Bots.pathStep(game, bot.pos.x, bot.pos.z, t.pos.x, t.pos.z);
+            bot.objNavTimer = 0.5;
+          }
+          var qx = bot.objNav.x - bot.pos.x, qz = bot.objNav.z - bot.pos.z;
+          var ql = Math.hypot(qx, qz) || 1;
+          wishX = qx / ql;
+          wishZ = qz / ql;
+          bot.navigating = true;
+        }
         if (bot.def.kind === "melee") speed *= 1.12;
       } else {
         // Deambular entre waypoints
@@ -277,18 +321,21 @@
           var nd = Math.hypot(nx2, nz2) || 1;
           wishX = nx2 / nd;
           wishZ = nz2 / nd;
+          bot.navigating = true;
         }
         void wd;
       }
 
-      // ---- Evasión de obstaculos y peligros ----
-      var probe = game.probeObstacle(bot, wishX, wishZ);
-      if (probe.blocked) {
-        var alt = probe.turn;
-        var cx = wishX * Math.cos(alt) - wishZ * Math.sin(alt);
-        var cz = wishX * Math.sin(alt) + wishZ * Math.cos(alt);
-        wishX = cx; wishZ = cz;
-        if (probe.jump) wantJump = true;
+      // ---- Evasión de obstaculos y peligros (no cuando se sigue una ruta ya validada) ----
+      if (!bot.navigating) {
+        var probe = game.probeObstacle(bot, wishX, wishZ);
+        if (probe.blocked) {
+          var alt = probe.turn;
+          var cx = wishX * Math.cos(alt) - wishZ * Math.sin(alt);
+          var cz = wishX * Math.sin(alt) + wishZ * Math.cos(alt);
+          wishX = cx; wishZ = cz;
+          if (probe.jump) wantJump = true;
+        }
       }
 
       // Evita precipicios: en islas flotantes los bots ya no se tiran al vacio
@@ -362,7 +409,7 @@
       bot.stuckTimer += dt;
       if (bot.stuckTimer > 1.4) {
         var moved = B.dist(bot.pos.x, bot.pos.z, bot.lastPos.x, bot.lastPos.z);
-        if (moved < 0.7) bot.waypoint = null;
+        if (moved < 0.7) { bot.waypoint = null; bot.forceNav = 1.8; }
         bot.lastPos.x = bot.pos.x; bot.lastPos.z = bot.pos.z; bot.stuckTimer = 0;
       }
     },

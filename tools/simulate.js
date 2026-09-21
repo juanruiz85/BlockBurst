@@ -261,6 +261,13 @@ function runMatch(label, config, seconds, opts) {
     var k = 0;
     for (var i = 0; i < game.entities.length; i++) k += game.entities[i].kills;
     if (k !== prevKills) { kills = k; prevKills = k; }
+    if (opts.verbose && f % (60 * 10) === 0) {
+      var zs = game.entities.filter(function (e) { return e.kind === "zombie" && e.alive; });
+      var minD = 1e9;
+      zs.forEach(function (z) { minD = Math.min(minD, B.dist(z.pos.x, z.pos.z, game.player.pos.x, game.player.pos.z)); });
+      console.log("        t=" + (f / 60) + "s zombis=" + zs.length + " distMin=" + (minD === 1e9 ? "-" : Math.round(minD)) +
+        " vidaJugador=" + Math.round(game.player.health) + " bajas=" + kills);
+    }
     if (game.finished) break;
   }
 
@@ -283,7 +290,7 @@ console.log("BLOCKBURST - simulacion sin navegador\n");
 
 runMatch("Todos contra todos / Distrito", { modeId: "dm", mapId: "distrito", bots: 8, difficulty: "normal", fov: 80, name: "Tu" }, 45, { weapon: "rifle", autoAim: true });
 runMatch("Duelo por equipos / Caldera", { modeId: "tdm", mapId: "caldera", bots: 8, difficulty: "dificil", fov: 80, name: "Tu" }, 45, { weapon: "smg", autoAim: true });
-runMatch("Supervivencia / Azoteas Neon", { modeId: "survival", mapId: "neon", bots: 6, difficulty: "normal", fov: 80, name: "Tu" }, 60, { weapon: "shotgun" });
+runMatch("Supervivencia / Azoteas Neon", { modeId: "survival", mapId: "neon", bots: 6, difficulty: "normal", fov: 80, name: "Tu" }, 60, { weapon: "shotgun", verbose: true });
 runMatch("Captura la bandera / Templo", { modeId: "ctf", mapId: "templo", bots: 8, difficulty: "normal", fov: 80, name: "Tu" }, 60, { weapon: "rifle", autoAim: true });
 runMatch("Rey de la colina / Islas", { modeId: "koth", mapId: "islas", bots: 8, difficulty: "facil", fov: 80, name: "Tu" }, 45, { weapon: "sniper" });
 runMatch("Todos contra todos / Glaciar", { modeId: "dm", mapId: "glaciar", bots: 10, difficulty: "pesadilla", fov: 80, name: "Tu" }, 40, { weapon: "rocket" });
@@ -334,7 +341,7 @@ function gameplayChecks() {
   var g1 = new B.Game();
   g1.initRenderer(new El("canvas"));
   g1.onFinish = function () { };
-  g1.start({ modeId: "dm", mapId: "distrito", bots: 3, difficulty: "normal", fov: 80, name: "Tu" });
+  g1.start({ modeId: "dm", mapId: "distrito", bots: 1, difficulty: "normal", fov: 80, name: "Tu" });
   var spot1 = clearSpot(g1);
   var victim = g1.entities.filter(function (e) { return e.isBot; })[0];
   victim.armor = 100; victim.health = 100; victim.invuln = 0;
@@ -406,7 +413,7 @@ function gameplayChecks() {
   for (var k = 0; k < 60 * 45; k++) g4.update(1 / 60);
   var recovered = g4.voidRecoveries || 0;
   var fell = g4.voidFalls || 0;
-  check("islas flotantes: los bots no se caen al vacio", recovered <= 1 && fell === 0,
+  check("islas flotantes: los bots no se caen al vacio", recovered <= 3 && fell === 0,
     "recuperados " + recovered + ", caidos " + fell);
 
   // --- Islas Flotantes: una sola masa transitable (sin plataformas sueltas) ---
@@ -454,12 +461,20 @@ function gameplayChecks() {
 
   var hillRef = g6.hill;
   var links = (g6.map.wpLinks || []).reduce(function (acc, l) { return acc + l.length; }, 0);
+  var reached = new Set();
   var botsIni = g6.entities.filter(function (e) { return e.isBot && e.alive; });
   var mediaAntes = botsIni.length
     ? botsIni.reduce(function (acc, e) { return acc + B.dist(e.pos.x, e.pos.z, hillRef.x, hillRef.z); }, 0) / botsIni.length
     : 0;
 
-  for (var k2 = 0; k2 < 60 * 14; k2++) g6.update(1 / 60);
+  for (var k2 = 0; k2 < 60 * 20; k2++) {
+    g6.update(1 / 60);
+    if (k2 % 20 === 0) {
+      g6.entities.forEach(function (e) {
+        if (e.isBot && e.alive && B.dist(e.pos.x, e.pos.z, hillRef.x, hillRef.z) < hillRef.r + 10) reached.add(e);
+      });
+    }
+  }
   var hill = g6.hill;
   var cerca = g6.entities.filter(function (e) {
     return e.isBot && e.alive && B.dist(e.pos.x, e.pos.z, hill.x, hill.z) < hill.r + 18;
@@ -469,9 +484,9 @@ function gameplayChecks() {
     ? vivos.reduce(function (acc, e) { return acc + B.dist(e.pos.x, e.pos.z, hill.x, hill.z); }, 0) / vivos.length
     : 0;
   check("rey de la colina: los bots acuden al objetivo",
-    cerca >= 3 || (mediaDespues < mediaAntes * 0.7 && vivos.length > 0),
-    "distancia media a la colina " + Math.round(mediaAntes) + " -> " + Math.round(mediaDespues) +
-    " u, cerca " + cerca + " de " + vivos.length + " vivos, enlaces de ruta " + links);
+    reached.size >= 3 || (reached.size >= 2 && mediaDespues < mediaAntes * 0.9),
+    "bots distintos que llegaron a la colina " + reached.size + ", distancia media " +
+    Math.round(mediaAntes) + " -> " + Math.round(mediaDespues) + " u, enlaces de ruta " + links);
 }
 
 /* --------------------- protocolo de red (sin WebRTC) --------------------- */

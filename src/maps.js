@@ -85,7 +85,10 @@
     var out = [];
     for (var c = 0; c < raw.length; c++) {
       var y = standable(boxes, raw[c][0], raw[c][1], hasGround, haz);
-      if (y !== null) out.push([r2(raw[c][0]), r2(raw[c][1]), r2(y)]);
+      // Solo terreno accesible a pie: nada de azoteas, o los enemigos cuerpo a cuerpo
+      // se quedarian abajo sin poder llegar.
+      if (y === null || y > 2.6) continue;
+      out.push([r2(raw[c][0]), r2(raw[c][1]), r2(y)]);
     }
     return out;
   }

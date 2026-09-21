@@ -1,5 +1,27 @@
 # Historial de cambios
 
+## v0.5.1 - Ajustes que destaparon las pruebas
+
+Al ejecutar la bateria completa varias veces seguidas, las comprobaciones automaticas
+detectaron comportamientos que no se veian en una sola partida:
+
+- **Los zombis se atascaban contra las paredes.** Solo perseguian si te veian, y en una
+  ciudad densa se quedaban dando vueltas: una oleada podia pasar 60 s sin una sola baja.
+  Ahora perciben al jugador siempre, rodean los obstaculos siguiendo el grafo de rutas y se
+  desatascan solos si dejan de avanzar.
+- **Apariciones y rutas solo en terreno accesible a pie.** Antes se podia aparecer en una
+  azotea o en una pasarela elevada: los enemigos cuerpo a cuerpo se quedaban abajo sin poder
+  llegar (y sin recibir dano). Ahora los puntos de aparicion, las rutas y los objetos se
+  limitan a superficies bajas.
+- **Distancia de aparicion jugable.** Los jugadores aparecen repartidos pero a una distancia
+  razonable del rival mas proximo (unos 30 m), en lugar del punto mas lejano del mapa, que
+  dejaba a los bots demasiado tiempo sin encontrarse.
+- **Persecucion que rodea**: cuando un bot persigue y no tiene linea de vista, sigue las
+  calles en vez de empujar la pared.
+
+Verificado con varias pasadas seguidas de la bateria completa (0 incidencias) y con la
+prueba de salas de tres navegadores.
+
 ## v0.5.0 - Katana, bots que navegan y mapa de islas
 
 ### Katana
