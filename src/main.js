@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var B = (window.BLITZ = window.BLITZ || {});
-  B.VERSION = "0.3.1";
+  B.VERSION = "0.4.0";
 
   var DIFFS = [
     { id: "facil", label: "Facil" },
@@ -194,6 +194,21 @@
           '<span class="mono" style="font-size:12px;letter-spacing:0.14em;color:var(--ink-dim)">JUGADORES <b id="roomCount" style="color:var(--ink)">' + count + "/" + B.Net.maxPlayers + '</b></span>' +
           '<ul class="summaryList" id="roomList">' + rows + '</ul>' +
           '<p class="dim" id="roomNote" style="font-size:13px;margin:0"></p>' +
+        '</div>' +
+
+        '<div style="display:grid;gap:8px">' +
+          '<span class="mono" style="font-size:12px;letter-spacing:0.14em;color:var(--ink-dim)">AJUSTES DE LA PARTIDA</span>' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+            '<label class="field" style="flex:1;min-width:150px"><span>Dificultad de los bots</span><select id="roomDiff"' + (host ? "" : " disabled") + '>' +
+              DIFFS.map(function (d) { return '<option value="' + d.id + '"' + (state.difficulty === d.id ? " selected" : "") + ">" + d.label + "</option>"; }).join("") +
+            '</select></label>' +
+            '<label class="field" style="flex:1;min-width:130px"><span>Numero de bots</span><select id="roomBots"' + (host ? "" : " disabled") + '>' +
+              [2, 4, 6, 8, 10, 12].map(function (n) { return '<option value="' + n + '"' + (state.bots === n ? " selected" : "") + ">" + n + " bots</option>"; }).join("") +
+            '</select></label>' +
+          '</div>' +
+          '<p class="dim" style="font-size:12.5px;margin:0">' +
+            (host ? "Se aplican al empezar la partida. Baja la dificultad si los bots matan demasiado rapido." : "Los elige el anfitrion; tu puedes practicar mientras tanto en una partida propia.") +
+          '</p>' +
         '</div>' +
 
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
@@ -394,6 +409,10 @@
         if (ev.key === "Enter") { ev.preventDefault(); openRoom(false); }
       });
     }
+    var rd = $("roomDiff");
+    if (rd) rd.addEventListener("change", function () { state.difficulty = rd.value; saveSettings(); refreshRoomUI(); });
+    var rb = $("roomBots");
+    if (rb) rb.addEventListener("change", function () { state.bots = parseInt(rb.value, 10) || 8; saveSettings(); refreshRoomUI(); });
     var bp = $("btnPasteRoom");
     if (bp) bp.addEventListener("click", function () {
       B.Audio.ui();

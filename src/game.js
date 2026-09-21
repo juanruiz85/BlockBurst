@@ -246,10 +246,11 @@
     var def = B.Weapon.byId(id);
     if (this.vmGroup && this.vmRoot) this.vmRoot.remove(this.vmGroup);
     this.vmGroup = B.Weapon.buildViewmodel(id).group;
-    this.vmMuzzleLocal = B.Weapon.buildViewmodel; // noop
     this.vmRoot.add(this.vmGroup);
     this.player.weapon = id;
     this.player.reloading = 0;
+    this.camera.fov = this.settings.fov;
+    this.camera.updateProjectionMatrix();
     if (!silent) B.Audio.ui();
   };
 
@@ -463,6 +464,7 @@
           f = B.lerp(1, def.falloffMin == null ? 0.5 : def.falloffMin, t);
         }
         var dmg = def.damage * f * mul * (eHit.head ? (def.headMul || 1) : 1);
+        if (eHit.head && def.lethalHead) dmg = 1000000;   // el francotirador mata de un tiro en la cabeza
         this.dealDamage(eHit.entity, dmg, shooter, { headshot: eHit.head, weapon: def.name });
         hitAny = true;
         this.spawnImpact(endPoint, "#ff5252");
@@ -477,26 +479,57 @@
     return { hitAny: hitAny, killed: killed };
   };
 
+  /* Barrido cuerpo a cuerpo: alcanza a varios enemigos dentro del cono frontal */
   Game.prototype.meleeAttack = function (shooter, def) {
     var origin = shooter.isPlayer
       ? new THREE.Vector3(this.camera.position.x, this.camera.position.y, this.camera.position.z)
       : new THREE.Vector3(shooter.pos.x, shooter.pos.y + shooter.eye, shooter.pos.z);
     var dir = shooter.isPlayer
       ? new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion)
-      : new THREE.Vector3(Math.sin(shooter.yaw), 0, Math.cos(shooter.yaw)).normalize();
-    var best = null, bestT = def.range;
+      : this.dirFromYawPitch(shooter.yaw, shooter.pitch || 0);
+    var cosArc = Math.cos((def.arc || 1.1) * 0.5);
+    var hits = 0;
+    var maxTargets = def.maxTargets || 3;
+
     for (var i = 0; i < this.entities.length; i++) {
       var e = this.entities[i];
       if (e === shooter || !e.alive || e.invuln > 0) continue;
       if (shooter.team && e.team === shooter.team) continue;
-      var dx = e.pos.x - origin.x, dz = e.pos.z - origin.z, dy = (e.pos.y + 0.9) - origin.y;
-      var d = Math.sqrt(dx * dx + dz * dz + dy * dy);
-      if (d > def.range) continue;
-      var dot = (dx * dir.x + dz * dir.z) / (Math.hypot(dx, dz) || 1);
-      if (dot < Math.cos(def.arc || 1.1)) continue;
-      if (d < bestT) { bestT = d; best = e; }
+      var dx = e.pos.x - origin.x, dz = e.pos.z - origin.z;
+      var dy = (e.pos.y + 0.9) - origin.y;
+      var horiz = Math.hypot(dx, dz);
+      if (horiz > def.range || Math.abs(dy) > 2.4) continue;
+      var dot = horiz > 0.001 ? (dx * dir.x + dz * dir.z) / horiz : 1;
+      if (dot < cosArc) continue;
+      var falloff = 1 - 0.35 * (horiz / def.range);
+      this.dealDamage(e, def.damage * falloff, shooter, { weapon: def.name });
+      hits++;
+      if (hits >= maxTargets) break;
     }
-    if (best) this.dealDamage(best, def.damage, shooter, { weapon: def.name });
+
+    // Los barriles tambien se pueden rebanar
+    for (var k = 0; k < this.barrels.length; k++) {
+      var b = this.barrels[k];
+      if (!b.alive) continue;
+      var bx = b.x - origin.x, bz = b.z - origin.z;
+      var bh = Math.hypot(bx, bz);
+      if (bh > def.range) continue;
+      var bdot = bh > 0.001 ? (bx * dir.x + bz * dir.z) / bh : 1;
+      if (bdot < cosArc) continue;
+      this.damageBarrel(b, def.damage, shooter);
+    }
+    return hits;
+  };
+
+  /* Evita que un bot camine hacia el vacio (islas flotantes y bordes) */
+  Game.prototype.ledgeAhead = function (ent, dx, dz) {
+    var x = ent.pos.x + dx * 1.25;
+    var z = ent.pos.z + dz * 1.25;
+    if (this.world.rampHeightAt(x, z) != null) return false;
+    for (var d = 0.35; d <= 1.8; d += 0.35) {
+      if (this.world.pointSolid(x, ent.pos.y - d, z)) return false;
+    }
+    return true;
   };
 
   Game.prototype.spawnImpact = function (point, color) {
@@ -760,8 +793,7 @@
     var p = this.player;
     var av = this.playerAvatar;
     av.group.visible = p.thirdPerson && p.alive;
-    if (!av.group.visible) return;
-    av.group.position.set(p.pos.x, p.pos.y, p.pos.z);
+    if (!av.group.visible) return;    av.group.position.set(p.pos.x, p.pos.y, p.pos.z);
     av.group.rotation.y = p.yaw + Math.PI;
     var sp = Math.hypot(p.vel.x, p.vel.z) / p.moveSpeed;
     B.Avatar.update(av, dt, sp, p.grounded);
@@ -793,6 +825,7 @@
       if (!this.netClient) this.meleeAttack(p, def);
       p.cooldown = 60 / def.rpm;
       this.vmKick = 0.18;
+      this.vmSwing = 0.32;
       return;
     }
 
@@ -888,8 +921,19 @@
       }
       B.Bots.update(this, bot, dt);
       if (bot.pos.y < this.world.bounds.voidY) {
-        this.killEntity(bot, null, { weapon: "el vacio" });
-        bot.respawnTimer = 3;
+        if (bot.kind === "zombie") {
+          // Un zombi que cae al vacio vuelve a la arena en vez de desaparecer
+          var sp = B.Bots.spawnPointFor(this, null);
+          bot.pos.x = sp[0]; bot.pos.z = sp[1]; bot.pos.y = (sp[2] || 0) + 0.1;
+          bot.vel.x = bot.vel.y = bot.vel.z = 0;
+          bot.waypoint = null;
+          this.voidRecoveries = (this.voidRecoveries || 0) + 1;
+          if (bot.group) bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
+        } else {
+          this.voidFalls = (this.voidFalls || 0) + 1;
+          this.killEntity(bot, null, { weapon: "el vacio" });
+          bot.respawnTimer = 3;
+        }
       }
     }
   };
@@ -1342,9 +1386,19 @@
     this.vmRoot.visible = !p.thirdPerson && p.alive;
     if (!this.vmRoot.visible) return;
 
-    var adsing = B.Input.mouse(2);
+    var adsing = B.Input.mouse(2) && !p.thirdPerson;
     p.adsTimer = B.clamp(p.adsTimer + (adsing ? dt * 6 : -dt * 6), 0, 1);
     var ads = p.adsTimer;
+
+    // Zoom al apuntar (el francotirador lleva su propia mira)
+    var defZoom = B.Weapon.byId(p.weapon);
+    var targetFov = (ads > 0.5 && defZoom.adsFov) ? defZoom.adsFov : this.settings.fov;
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov = B.lerp(this.camera.fov, targetFov, Math.min(1, dt * 10));
+      this.camera.updateProjectionMatrix();
+    }
+    if (this.onScope) this.onScope(defZoom, ads);
+    B.HUD.setScope(!!(defZoom.scope && ads > 0.85));
 
     _swayX = B.lerp(_swayX, B.clamp(-p.lookDX * 0.0016, -0.05, 0.05), dt * 8);
     _swayY = B.lerp(_swayY, B.clamp(-p.lookDY * 0.0016, -0.05, 0.05), dt * 8);
@@ -1354,6 +1408,8 @@
     var bob2 = Math.cos(p.bob * 2) * Math.min(0.02, sp * 0.003);
 
     this.vmKick = Math.max(0, (this.vmKick || 0) - dt * 1.6);
+    this.vmSwing = Math.max(0, (this.vmSwing || 0) - dt * 3.2);
+    var swing = this.vmSwing > 0 ? Math.sin((1 - this.vmSwing / 0.32) * Math.PI) : 0;
     var reloadDip = p.reloading > 0 ? Math.sin(Math.min(1, p.reloading / B.Weapon.byId(p.weapon).reload) * Math.PI) * 0.28 : 0;
 
     var tx = 0.3 - ads * 0.26 + _swayX;
@@ -1361,7 +1417,7 @@
     var tz = -0.62 + this.vmKick * 0.35 + bob2;
 
     this.vmRoot.position.set(tx, ty, tz);
-    this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9, ads * 0.02 + _swayY * 0.5, 0);
+    this.vmRoot.rotation.set(reloadDip * 1.4 + this.vmKick * 0.9 - swing * 0.22, ads * 0.02 + _swayY * 0.5 + swing * 1.15, swing * 0.55);
 
     if (this.muzzleTimer > 0) {
       this.muzzleTimer -= dt;
@@ -1460,6 +1516,7 @@
 
   Game.prototype.updateRemotePlayer = function (rp, dt) {
     if (!rp) return;
+    rp.invuln = Math.max(0, (rp.invuln || 0) - dt);
     var self = this;
     function respawn() {
       var sp = B.Bots.spawnPointFor(self, rp.team);

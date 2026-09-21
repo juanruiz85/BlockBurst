@@ -1,5 +1,37 @@
 # Historial de cambios
 
+## v0.4.0 - Armas, bots y mapa
+
+### Armas
+- **Katana**: ahora es un barrido cuerpo a cuerpo que alcanza a varios enemigos en el cono
+  frontal, con animacion de tajo en el modelo. Antes era un golpe puntual y se sentia como
+  un arma de fuego. Tambien puede rebanar barriles.
+- **Francotirador**: zoom real al apuntar (campo de vision 22) con mira superpuesta y su
+  propia reticula, y **muerte de un solo tiro en la cabeza** aunque el rival lleve escudo.
+- **Retroceso**: suavizado en pistola, subfusil, francotirador y lanzacohetes; el rifle y la
+  escopeta conservan el retroceso de antes.
+- **Modelos mas detallados**: pistola (corredera, alza y punto de mira), subfusil (cañon,
+  bocacha, culata), escopeta (guardamanos), rifle (carril y miras), francotirador (visor,
+  bipode), katana (guardia, vendas y filo) y lanzacohetes (asas, culata y boca).
+
+### Bots
+- Nivel de dificultad elegible **al crear la sala**, junto al numero de bots.
+- Los bots son menos letales: mas tiempo de reaccion, mas error de punteria y menos dano.
+- **Ya no atacan solo al anfitrion.** El jugador remoto se quedaba con la inmunidad puesta
+  para siempre: los bots lo ignoraban y ademas no se le podia hacer dano. Corregido.
+- **Islas Flotantes**: los bots y zombis ya no se caen al vacio. Eligen ruta dentro de la
+  misma isla, evitan los bordes al caminar y, si aun asi uno cae, los zombis vuelven a la
+  arena en lugar de desaparecer.
+- El mapa Islas Flotantes tiene ahora mas puentes, mas anchos y plataformas intermedias,
+  de modo que las islas estan bien conectadas.
+- Los zombis pegan mas flojo que un humano con la katana.
+
+### Herramientas
+- El simulador incorpora comprobaciones de jugabilidad: retroceso por arma, zoom y muerte de
+  un tiro del francotirador, barrido de la katana, que los bots ataquen al jugador remoto y
+  que no se caigan en Islas Flotantes.
+- La prueba de salas comprueba que la dificultad elegida al crear la partida se aplica.
+
 ## v0.3.1 - Arreglo del campo del codigo de sala
 
 - El juego capturaba el teclado a nivel global para WASD y se comia las letras al escribir

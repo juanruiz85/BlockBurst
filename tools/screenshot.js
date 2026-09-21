@@ -210,6 +210,16 @@ Client.prototype.shot = function (file, quality) {
     await sleep(1200);
     shots.push({ name: 'captura-primera-persona.png', size: await client.shot(path.join(OUT, 'captura-primera-persona.png')) });
 
+    /* 4b. Katana: modelo y pose de barrido */
+    await client.evaluate('(function(){var g=window.BLITZ.debug.game;g.setWeapon("katana");window.BLITZ.Input.mouse=function(b){return b===0;};var p=g.player;if(!window.__keep){window.__keep=setInterval(function(){p.alive=true;p.invuln=99999;p.health=100;},200);}p.thirdPerson=false;return 1;})()');
+    await sleep(1800);
+    shots.push({ name: 'captura-katana.png', size: await client.shot(path.join(OUT, 'captura-katana.png')) });
+
+    /* 5. Francotirador con la mira puesta: zoom y reticula del visor */
+    await client.evaluate('(function(){var g=window.BLITZ.debug.game;g.setWeapon("sniper");window.BLITZ.Input.mouse=function(b){return b===2;};var p=g.player;if(!window.__keep){window.__keep=setInterval(function(){p.alive=true;p.invuln=99999;p.health=100;},200);}p.thirdPerson=false;return 1;})()');
+    await sleep(2600);
+    shots.push({ name: 'captura-francotirador.png', size: await client.shot(path.join(OUT, 'captura-francotirador.png')) });
+
     /* Diagnostico del navegador */
     var diag = await client.evaluate('(function(){var d=window.BLITZ&&window.BLITZ.debug;if(!d)return "sin debug";var g=d.game;var v=g.vmRoot;return JSON.stringify({modo:g.mode.id,mapa:g.map.id,estado:g.state,entidades:g.entities.length,vivos:g.entities.filter(function(e){return e.alive;}).length,hud:!document.getElementById("hud").hidden,armaVisible:!!(v&&v.visible),piezasArma:v?v.children.length:0});})()');
     var errs = client.events.filter(function (e) {

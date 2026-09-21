@@ -16,7 +16,7 @@
         "healthNum", "healthFill", "armorNum", "armorFill", "weaponName", "ammoMag", "ammoReserve",
         "weaponSlots", "crosshair", "hitmarker", "damageVignette", "healVignette", "centerMsg",
         "pickupToast", "respawnBox", "respawnTime", "btnRespawn", "respawnHint",
-        "scoreboard", "sbTitle", "sbBody", "netStatus"].forEach(function (id) { el[id] = $(id); });
+        "scoreboard", "sbTitle", "sbBody", "netStatus", "scope"].forEach(function (id) { el[id] = $(id); });
       mm = el.minimap;
       mmx = mm.getContext("2d");
     },
@@ -31,7 +31,15 @@
         el.crosshair.classList.remove("hit");
         el.respawnBox.hidden = true;
         el.scoreboard.hidden = true;
+        this.setScope(false);
       }
+    },
+
+    setScope: function (on) {
+      if (!el.scope) return;
+      el.scope.hidden = !on;
+      el.scope.classList.toggle("on", on);
+      el.hud.classList.toggle("scoped", on);
     },
 
     banner: function (text, dur, sub) {

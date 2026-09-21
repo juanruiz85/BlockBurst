@@ -11,11 +11,12 @@
   ];
   var WEAPON_POOL = ["pistol", "smg", "shotgun", "rifle", "sniper"];
 
+  /* Menos letales que antes: mas tiempo de reaccion, mas error de punteria y menos dano */
   var PRESETS = {
-    facil: { reaction: 0.55, aim: 3.2, dmg: 0.72, view: 62, burst: [0.45, 0.95], strafe: 0.35, hpMul: 0.9 },
-    normal: { reaction: 0.34, aim: 1.9, dmg: 1.0, view: 82, burst: [0.6, 0.7], strafe: 0.5, hpMul: 1.0 },
-    dificil: { reaction: 0.2, aim: 1.15, dmg: 1.1, view: 102, burst: [0.8, 0.5], strafe: 0.65, hpMul: 1.0 },
-    pesadilla: { reaction: 0.12, aim: 0.7, dmg: 1.22, view: 122, burst: [1.0, 0.4], strafe: 0.8, hpMul: 1.1 }
+    facil: { reaction: 0.85, aim: 4.6, dmg: 0.4, view: 55, burst: [0.35, 1.5], strafe: 0.3, hpMul: 0.85 },
+    normal: { reaction: 0.6, aim: 2.9, dmg: 0.6, view: 72, burst: [0.45, 1.15], strafe: 0.42, hpMul: 1.0 },
+    dificil: { reaction: 0.4, aim: 1.8, dmg: 0.8, view: 92, burst: [0.6, 0.9], strafe: 0.55, hpMul: 1.0 },
+    pesadilla: { reaction: 0.25, aim: 1.2, dmg: 0.95, view: 112, burst: [0.75, 0.7], strafe: 0.7, hpMul: 1.05 }
   };
 
   var usedNames = [];
@@ -184,8 +185,18 @@
         // Deambular entre waypoints
         var wps = game.map.waypoints;
         if (!bot.waypoint) {
-          var cand = wps[B.randInt(0, wps.length - 1)];
-          bot.waypoint = { x: cand[0] + B.rand(-4, 4), z: cand[1] + B.rand(-4, 4) };
+          // Elige ruta dentro de la misma isla o plataforma conectada
+          var myCluster = game.map.clusterAt ? game.map.clusterAt(bot.pos.x, bot.pos.z) : -1;
+          var cands = null;
+          if (myCluster >= 0 && game.map.wpClusters) {
+            cands = [];
+            for (var wi = 0; wi < wps.length; wi++) {
+              if (game.map.wpClusters[wi] === myCluster) cands.push(wps[wi]);
+            }
+          }
+          if (!cands || !cands.length) cands = wps;
+          var cand = cands[B.randInt(0, cands.length - 1)];
+          bot.waypoint = { x: cand[0] + B.rand(-3, 3), z: cand[1] + B.rand(-3, 3) };
         }
         var wx = bot.waypoint.x - bot.pos.x, wz = bot.waypoint.z - bot.pos.z;
         var wd = Math.hypot(wx, wz);
@@ -201,6 +212,23 @@
         var cz = wishX * Math.sin(alt) + wishZ * Math.cos(alt);
         wishX = cx; wishZ = cz;
         if (probe.jump) wantJump = true;
+      }
+
+      // Evita precipicios: en islas flotantes los bots ya no se tiran al vacio
+      if (bot.grounded !== false && (Math.abs(wishX) + Math.abs(wishZ)) > 0.05) {
+        var wl = Math.hypot(wishX, wishZ) || 1;
+        var ux = wishX / wl, uz = wishZ / wl;
+        if (game.ledgeAhead(bot, ux, uz)) {
+          var side = bot.strafeDir || 1;
+          var ang = side * 1.1;
+          var c1x = ux * Math.cos(ang) - uz * Math.sin(ang);
+          var c1z = ux * Math.sin(ang) + uz * Math.cos(ang);
+          var c2x = ux * Math.cos(-ang) - uz * Math.sin(-ang);
+          var c2z = ux * Math.sin(-ang) + uz * Math.cos(-ang);
+          if (!game.ledgeAhead(bot, c1x, c1z)) { wishX = c1x; wishZ = c1z; }
+          else if (!game.ledgeAhead(bot, c2x, c2z)) { wishX = c2x; wishZ = c2z; }
+          else { wishX = -ux; wishZ = -uz; }
+        }
       }
 
       var ratio = Math.min(1, Math.hypot(wishX, wishZ));
@@ -288,9 +316,11 @@
       var t = bot.target;
       if (!t) return;
       B.Audio.melee();
+      // Un zombi golpea mas flojo que un humano con la katana
+      var mul = bot.kind === "zombie" ? bot.preset.dmg * 0.35 : bot.preset.dmg;
       game.hitscanShot(bot, bot.def, new THREE.Vector3(bot.pos.x, bot.pos.y + bot.eye, bot.pos.z),
         new THREE.Vector3(t.pos.x - bot.pos.x, (t.pos.y + 1.1) - (bot.pos.y + bot.eye), t.pos.z - bot.pos.z).normalize(),
-        { damageMul: bot.preset.dmg, melee: true, source: "bot" });
+        { damageMul: mul, melee: true, source: "bot" });
     }
   };
 

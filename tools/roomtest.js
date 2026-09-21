@@ -170,6 +170,8 @@ async function poll(c, expr, check, tries, waitMs, label) {
     console.log('  jugadores en la sala segun el anfitrion: ' + count);
 
     console.log('El anfitrion empieza la partida...');
+    await H.eval('(function(){var d=document.getElementById("roomDiff");if(d){d.value="facil";d.dispatchEvent(new Event("change"));}return 1;})()');
+    await sleep(400);
     await H.eval('document.getElementById("btnStartRoom").click(); 1');
 
     var hostState = await poll(H, '(function(){var d=window.BLITZ.debug;return JSON.stringify({estado:d.game.state,remotos:Object.keys(d.game.remotes||{}).length,entidades:d.game.entities.length});})()',
@@ -214,6 +216,10 @@ async function poll(c, expr, check, tries, waitMs, label) {
         function (v) { var o = JSON.parse(v); return o.estado === 'playing' && o.entidadesRed >= 3; }, 25, 700, 'invitado 2 en partida');
       console.log('  invitado 2: ' + gB);
     }
+
+    var diffApplied = await H.eval('window.BLITZ.debug.game.settings.difficulty');
+    console.log('dificultad elegida al crear la partida: ' + diffApplied);
+    if (diffApplied !== 'facil') fail.push('la dificultad elegida en la sala no se aplico (quedo en ' + diffApplied + ')');
 
     await sleep(1500);
     await H.shot(path.join(OUT, 'captura-sala-anfitrion.png'));

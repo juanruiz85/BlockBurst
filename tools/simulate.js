@@ -288,6 +288,128 @@ runMatch("Captura la bandera / Templo", { modeId: "ctf", mapId: "templo", bots: 
 runMatch("Rey de la colina / Islas", { modeId: "koth", mapId: "islas", bots: 8, difficulty: "facil", fov: 80, name: "Tu" }, 45, { weapon: "sniper" });
 runMatch("Todos contra todos / Glaciar", { modeId: "dm", mapId: "glaciar", bots: 10, difficulty: "pesadilla", fov: 80, name: "Tu" }, 40, { weapon: "rocket" });
 
+/* ------------------- comprobaciones de jugabilidad ------------------- */
+function gameplayChecks() {
+  function check(name, ok, detail) {
+    console.log("[" + (ok ? "  OK " : "ERROR") + "] " + name + (detail ? "  (" + detail + ")" : ""));
+    if (!ok) errors.push(name);
+  }
+
+  /* Busca un punto despejado (varios rayos libres) para colocar pruebas */
+  function clearSpot(game, minOpen) {
+    var pts = [];
+    game.map.spawns.forEach(function (s) { pts.push({ x: s[0], z: s[1] }); });
+    game.map.pickupNodes.forEach(function (p) { pts.push({ x: p[0], z: p[1] }); });
+    var best = null, bestOpen = -1;
+    pts.forEach(function (p) {
+      var open = 0;
+      for (var a = 0; a < 8; a++) {
+        var ang = a * Math.PI / 4;
+        var hit = game.world.raycast(new THREE.Vector3(p.x, 1.1, p.z),
+          new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)), 7, 0.3);
+        if (!hit) open++;
+      }
+      if (open > bestOpen) { bestOpen = open; best = p; }
+    });
+    void minOpen;
+    return best || { x: 0, z: 0 };
+  }
+
+  // --- Retroceso: solo rifle y escopeta conservan el actual ---
+  var pistol = B.Weapon.byId("pistol"), smg = B.Weapon.byId("smg"), rifle = B.Weapon.byId("rifle");
+  var shotgun = B.Weapon.byId("shotgun"), sniper = B.Weapon.byId("sniper"), rocket = B.Weapon.byId("rocket");
+  var katana = B.Weapon.byId("katana");
+  check("retroceso suave en pistola, subfusil, francotirador y lanzacohetes",
+    pistol.kick <= 0.03 && smg.kick <= 0.02 && sniper.kick <= 0.09 && rocket.kick <= 0.06,
+    "pistola " + pistol.kick + ", subfusil " + smg.kick + ", franco " + sniper.kick + ", cohete " + rocket.kick);
+  check("rifle y escopeta conservan su retroceso",
+    rifle.kick >= 0.04 && shotgun.kick >= 0.12, "rifle " + rifle.kick + ", escopeta " + shotgun.kick);
+  check("francotirador: zoom al apuntar y muerte de un tiro en la cabeza",
+    sniper.adsFov > 0 && sniper.adsFov < 40 && sniper.lethalHead === true, "fov de mira " + sniper.adsFov);
+  check("katana: cuerpo a cuerpo con barrido a varios objetivos",
+    katana.kind === "melee" && katana.sweep === true && (katana.maxTargets || 0) >= 2,
+    "alcance " + katana.range + ", objetivos " + katana.maxTargets);
+
+  // --- Francotirador: un tiro en la cabeza mata aunque lleve escudo ---
+  var g1 = new B.Game();
+  g1.initRenderer(new El("canvas"));
+  g1.onFinish = function () { };
+  g1.start({ modeId: "dm", mapId: "distrito", bots: 3, difficulty: "normal", fov: 80, name: "Tu" });
+  var spot1 = clearSpot(g1);
+  var victim = g1.entities.filter(function (e) { return e.isBot; })[0];
+  victim.armor = 100; victim.health = 100; victim.invuln = 0;
+  victim.pos.x = spot1.x; victim.pos.y = 0.1; victim.pos.z = spot1.z - 9;
+  var origin = new THREE.Vector3(spot1.x, 1.25, spot1.z);
+  var headY = victim.pos.y + victim.height * 0.9;
+  var dir = new THREE.Vector3(0, headY - origin.y, -9).normalize();
+  g1.hitscanShot(g1.player, B.Weapon.byId("sniper"), origin, dir, { damageMul: 1, spreadDeg: 0 });
+  check("francotirador: cabeza = un solo tiro", victim.health <= 0 && !victim.alive,
+    "vida tras el disparo " + Math.round(victim.health));
+
+  // --- Katana: barrido que alcanza a dos enemigos a la vez ---
+  var g2 = new B.Game();
+  g2.initRenderer(new El("canvas"));
+  g2.onFinish = function () { };
+  g2.start({ modeId: "dm", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Tu" });
+  var bots = g2.entities.filter(function (e) { return e.isBot; });
+  var pl = g2.player;
+  var spot2 = clearSpot(g2);
+  pl.pos.x = spot2.x; pl.pos.y = 0.1; pl.pos.z = spot2.z;
+  pl.yaw = 0; pl.pitch = 0;
+  g2.camera.position.set(pl.pos.x, pl.pos.y + pl.eye, pl.pos.z);
+  g2.camera.rotation.set(0, 0, 0, "YXZ");
+  // Dos enemigos delante, dentro del barrido
+  bots[0].pos.x = pl.pos.x - 0.7; bots[0].pos.y = pl.pos.y; bots[0].pos.z = pl.pos.z - 1.7;
+  bots[1].pos.x = pl.pos.x + 0.7; bots[1].pos.y = pl.pos.y; bots[1].pos.z = pl.pos.z - 1.7;
+  bots[0].health = 100; bots[0].armor = 0; bots[0].invuln = 0;
+  bots[1].health = 100; bots[1].armor = 0; bots[1].invuln = 0;
+  var hits = g2.meleeAttack(pl, B.Weapon.byId("katana"));
+  check("katana: el barrido alcanza a varios enemigos", hits >= 2 && bots[0].health < 100 && bots[1].health < 100,
+    "objetivos alcanzados " + hits);
+
+  // --- Multijugador: los bots tambien tienen que atacar al jugador remoto ---
+  var g3 = new B.Game();
+  g3.initRenderer(new El("canvas"));
+  g3.onFinish = function () { };
+  g3.netHost = true;
+  g3.start({ modeId: "dm", mapId: "distrito", bots: 4, difficulty: "normal", fov: 80, name: "Anfitrion" });
+  var spot3 = clearSpot(g3);
+  var rem = g3.addRemotePlayer("p1", "Invitado");
+  rem.armor = 0; rem.health = 100;
+  rem.pos.x = spot3.x; rem.pos.y = 0.1; rem.pos.z = spot3.z;
+  g3.player.pos.x = spot3.x + 34; g3.player.pos.z = spot3.z + 34;
+  var blist = g3.entities.filter(function (e) { return e.isBot; });
+  blist.forEach(function (b, i) {
+    b.pos.x = spot3.x + 1.6 + i * 1.4;
+    b.pos.y = 0.1;
+    b.pos.z = spot3.z + 0.4 * i;
+    b.target = null;
+  });
+  B.Net.applyInput(rem, [0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+  for (var f = 0; f < 60 * 4; f++) g3.update(1 / 60);
+  var invulnOk = rem.invuln === 0;
+  // Disparo forzado de un bot cercano contra el jugador remoto
+  var b0 = blist[0];
+  b0.pos.x = rem.pos.x + 1.4; b0.pos.z = rem.pos.z; b0.pos.y = rem.pos.y;
+  b0.target = rem; b0.reactionTimer = 0; b0.cooldown = 0; b0.reloading = 0; b0.ammoMag = 30;
+  B.Bots.shoot(g3, b0);
+  check("multijugador: los bots atacan tambien al jugador remoto",
+    invulnOk && rem.health < 100,
+    "inmunidad del remoto al terminar " + rem.invuln + ", vida tras el disparo " + Math.round(rem.health));
+
+  // --- Islas Flotantes: los bots no deben caerse al vacio ---
+  var g4 = new B.Game();
+  g4.initRenderer(new El("canvas"));
+  g4.onFinish = function () { };
+  g4.start({ modeId: "survival", mapId: "islas", bots: 4, difficulty: "normal", fov: 80, name: "Tu" });
+  g4.player.pos.x = 0; g4.player.pos.z = 0;
+  for (var k = 0; k < 60 * 45; k++) g4.update(1 / 60);
+  var recovered = g4.voidRecoveries || 0;
+  var fell = g4.voidFalls || 0;
+  check("islas flotantes: los bots no se caen al vacio", recovered <= 1 && fell === 0,
+    "recuperados " + recovered + ", caidos " + fell);
+}
+
 /* --------------------- protocolo de red (sin WebRTC) --------------------- */
 function netTest() {
   var host = new B.Game();
@@ -351,6 +473,8 @@ function netTest() {
 }
 
 netTest().catch(function (e) { errors.push("multijugador: " + e.message); }).then(function () {
+  gameplayChecks();
+}).then(function () {
   console.error = origError;
   console.log("\nIncidencias: " + errors.length);
   errors.forEach(function (e) { console.log("  - " + e); });

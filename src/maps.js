@@ -311,16 +311,61 @@
       }
     }
 
+    var finalStructures = cfg.structures.concat(props);
+    var fboxes = solidBoxes(finalStructures);
+    var haz2 = cfg.hazards || [];
+    var cellStep = 2.5;
+    var gN = Math.max(1, Math.ceil(cfg.size / cellStep));
+    var grid = new Int32Array(gN * gN).fill(-1);
+    var gi, gj;
+    for (gj = 0; gj < gN; gj++) {
+      for (gi = 0; gi < gN; gi++) {
+        var px = -half + (gi + 0.5) * cellStep;
+        var pz = -half + (gj + 0.5) * cellStep;
+        if (standable(fboxes, px, pz, hasGround, haz2) !== null) grid[gj * gN + gi] = -2;
+      }
+    }
+    var nextCluster = 0;
+    var queue = [];
+    for (var ci = 0; ci < grid.length; ci++) {
+      if (grid[ci] !== -2) continue;
+      var id = nextCluster++;
+      grid[ci] = id;
+      queue.length = 0;
+      queue.push(ci);
+      while (queue.length) {
+        var cur = queue.pop();
+        var cx = cur % gN, cz = (cur - cx) / gN;
+        var nb = [];
+        if (cx > 0) nb.push(cur - 1);
+        if (cx < gN - 1) nb.push(cur + 1);
+        if (cz > 0) nb.push(cur - gN);
+        if (cz < gN - 1) nb.push(cur + gN);
+        for (var nbi = 0; nbi < nb.length; nbi++) {
+          if (grid[nb[nbi]] === -2) { grid[nb[nbi]] = id; queue.push(nb[nbi]); }
+        }
+      }
+    }
+    function clusterAt(x, z) {
+      var a = Math.floor((x + half) / cellStep);
+      var b = Math.floor((z + half) / cellStep);
+      if (a < 0 || b < 0 || a >= gN || b >= gN) return -1;
+      var v = grid[b * gN + a];
+      return v < 0 ? -1 : v;
+    }
+    var wpClusters = waypoints.map(function (w) { return clusterAt(w[0], w[1]); });
+
     return {
       id: cfg.id, name: cfg.name, tagline: cfg.tagline, size: cfg.size,
       theme: cfg.theme, ground: hasGround,
-      structures: cfg.structures.concat(props), hazards: cfg.hazards || [],
+      structures: finalStructures, hazards: cfg.hazards || [],
       barrels: barrels, swatch: cfg.swatch,
       friction: cfg.friction == null ? 0.82 : cfg.friction,
       jump: cfg.jump == null ? 8.2 : cfg.jump,
       gravity: cfg.gravity == null ? 22 : cfg.gravity,
       voidY: cfg.voidY == null ? -14 : cfg.voidY,
       spawns: spawns, waypoints: waypoints, pickupNodes: pickups,
+      wpClusters: wpClusters, clusterAt: clusterAt, clusterCount: nextCluster,
       objectives: {
         flags: { red: [redP[0], redP[1]], blue: [blueP[0], blueP[1]], redY: redP[2], blueY: blueP[2] },
         hill: { x: hillP[0], z: hillP[1], y: hillP[2], r: 7.5 }
@@ -485,11 +530,21 @@
       if (rand() < 0.75) out.push({ p: [c[0] - w * 0.28, 0, c[1] + d * 0.24], s: [3, 4 + rand() * 4, 3], c: "#5d7a3a" });
       if (rand() < 0.65) out.push({ p: [c[0] + w * 0.3, 0, c[1] - d * 0.24], s: [2.6, 3 + rand() * 3, 2.6], c: "#7f6a44" });
     });
-    // Puentes entre islas
-    out.push({ p: [0, -1.6, -21], s: [6, 1, 20], c: "#a8834f" });
-    out.push({ p: [0, -1.6, 21], s: [6, 1, 20], c: "#a8834f" });
-    out.push({ p: [-21, -1.6, 0], s: [20, 1, 6], c: "#a8834f" });
-    out.push({ p: [21, -1.6, 0], s: [20, 1, 6], c: "#a8834f" });
+    // Puentes anchos entre islas, formando una red transitable
+    out.push({ p: [0, -1.6, -21], s: [8, 1, 22], c: "#a8834f" });
+    out.push({ p: [0, -1.6, 21], s: [8, 1, 22], c: "#a8834f" });
+    out.push({ p: [-21, -1.6, 0], s: [22, 1, 8], c: "#a8834f" });
+    out.push({ p: [21, -1.6, 0], s: [22, 1, 8], c: "#a8834f" });
+    // Diagonales del anillo exterior
+    out.push({ p: [-29, -1.6, -29], s: [22, 1, 8], c: "#b08a52" });
+    out.push({ p: [32, -1.6, 31], s: [20, 1, 7], c: "#b08a52" });
+    out.push({ p: [-21, -1.6, 30], s: [20, 1, 7], c: "#b08a52" });
+    out.push({ p: [21, -1.6, -30], s: [20, 1, 7], c: "#b08a52" });
+    // Plataformas de descanso intermedias para no tener saltos largos
+    out.push({ p: [-18, -2.2, -18], s: [9, 2.2, 9], c: "#7ab55c" });
+    out.push({ p: [18, -2.2, 18], s: [9, 2.2, 9], c: "#7ab55c" });
+    out.push({ p: [-18, -2.2, 18], s: [9, 2.2, 9], c: "#6fa04e" });
+    out.push({ p: [18, -2.2, -18], s: [9, 2.2, 9], c: "#6fa04e" });
 
     B.MAPS.push(finish(606, {
       id: "islas", name: "Islas Flotantes", tagline: "Plataformas sobre el vacio: un paso en falso y caes fuera de la arena.",

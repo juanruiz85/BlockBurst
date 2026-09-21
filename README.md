@@ -63,6 +63,9 @@ Y entra en la direccion que imprime la consola.
 No hay cuentas, no hay servidor propio y no hace falta instalar nada. El modo por equipos
 mete a los dos jugadores en el **mismo bando** contra los bots.
 
+Al crear la sala el anfitrion elige **numero de bots** y **dificultad**; si la partida te
+resulta dura, empieza en `Facil`, que es notablemente mas indulgente que `Normal`.
+
 ### Modo sin relay (codigos manuales)
 
 Si el broker publico no estuviera disponible (o prefieres no depender de el), en la misma
@@ -122,6 +125,15 @@ un validador automatico comprueba que nada quede dentro de un bloque.
 | 5 | Francotirador | Un disparo, mucho dano, retroceso fuerte |
 | 6 | Katana | Cuerpo a cuerpo, sin municion |
 | 7 | Lanzacohetes | Dano en area, ideal contra grupos |
+
+Notas de comportamiento:
+
+- El **retroceso** solo es marcado en el **rifle** y la **escopeta**; el resto de armas son
+  mucho mas suaves.
+- El **francotirador** tiene **zoom al apuntar** (clic derecho) con su propia mira, y un tiro
+  en la cabeza es **muerte segura** aunque el rival lleve escudo completo.
+- La **katana** es un **barrido** cuerpo a cuerpo: alcanza a varios enemigos a la vez dentro
+  del cono frontal y tambien abre barriles. No gasta municion.
 
 Los barriles rojos explotan si les disparas y hacen dano en area a todo el mundo.
 
