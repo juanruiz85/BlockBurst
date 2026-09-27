@@ -1,5 +1,18 @@
 # Historial de cambios
 
+## v0.5.5 - Las islas ganan volumen
+
+- **Raiz de roca colgando**: cada isla lleva ahora cuatro capas de roca decrecientes por
+  debajo, asi que se lee que **flota** y no que es una losa plana (36 piezas de roca en total).
+- **Bordes irregulares**: bloques que sobresalen del canto de cada isla, de modo que la
+  silueta no es un rectangulo perfecto.
+- **Formas variadas**: algunas islas llevan un brazo extra con forma de L, asi que el mapa
+  deja de ser una cuadricula de rectangulos iguales (15 losas de isla en vez de 9).
+- Se mantiene todo lo anterior: **100% del terreno transitable conectado** (una sola zona),
+  bots y zombis que **no se caen** y rutas que cruzan las pasarelas.
+- Verificado con una **captura aerea 3/4**: se ven las islas separadas, el vacio entre ellas
+  y la roca colgando por debajo.
+
 ## v0.5.4 - Las islas vuelven a parecer islas
 
 - El arreglo anterior (pasarelas en L de 9 m de ancho que solapaban las plataformas) soldaba

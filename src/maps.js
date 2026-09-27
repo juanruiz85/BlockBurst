@@ -576,9 +576,40 @@
 
     isl.forEach(function (is, i) {
       out.push({ p: [is.x, -3, is.z], s: [is.w, 3, is.d], c: is.main ? "#7ab55c" : "#6fa04e" });
+      // Formas variadas: algunas islas llevan un brazo extra (forma de L)
+      if (i % 3 === 1) {
+        out.push({ p: [is.x + is.w * 0.42, -3, is.z - is.d * 0.3], s: [is.w * 0.7, 3, is.d * 0.45], c: "#6fa04e" });
+      } else if (i % 3 === 2) {
+        out.push({ p: [is.x - is.w * 0.4, -3, is.z - is.d * 0.34], s: [is.w * 0.55, 3, is.d * 0.6], c: "#7ab55c" });
+      }
       out.push({ p: [is.x, 0, is.z], s: [is.w * 0.34, 1.1 + rand() * 0.9, is.d * 0.34], c: ["#c9a86a", "#b8975a", "#8a6f45"][i % 3] });
       if (rand() < 0.85) out.push({ p: [is.x - is.w * 0.26, 0, is.z + is.d * 0.22], s: [2.8, 3.4 + rand() * 2.6, 2.8], c: "#5d7a3a" });
       if (rand() < 0.7) out.push({ p: [is.x + is.w * 0.28, 0, is.z - is.d * 0.22], s: [2.4, 2.8 + rand() * 2.2, 2.4], c: "#7f6a44" });
+
+      /* Raiz de roca colgando: da volumen y deja claro que la isla flota */
+      var layers = 4;
+      for (var L = 1; L <= layers; L++) {
+        var t = L / (layers + 0.6);
+        out.push({
+          p: [is.x + (rand() - 0.5) * 2.4, -3 - L * 2.3, is.z + (rand() - 0.5) * 2.4],
+          s: [is.w * (1 - t * 0.72), 2.3, is.d * (1 - t * 0.72)],
+          c: L % 2 ? "#6a5a4a" : "#7d6b57"
+        });
+      }
+
+      /* Bordes irregulares: bloques que sobresalen del canto */
+      var sides = 4 + Math.floor(rand() * 4);
+      for (var e = 0; e < sides; e++) {
+        var lado = e % 4;
+        var off = (rand() - 0.5) * 0.5;
+        var sz = 1.6 + rand() * 1.8;
+        if (lado === 0) out.push({ p: [is.x + (rand() - 0.5) * is.w * 0.5, -1.4, is.z - is.d / 2 - sz * 0.25], s: [sz, 1.4, 1.5], c: "#5f8a44" });
+        else if (lado === 1) out.push({ p: [is.x + (rand() - 0.5) * is.w * 0.5, -1.4, is.z + is.d / 2 + sz * 0.25], s: [sz, 1.4, 1.5], c: "#5f8a44" });
+        else if (lado === 2) out.push({ p: [is.x - is.w / 2 - sz * 0.25, -1.4, is.z + (rand() - 0.5) * is.d * 0.5], s: [1.5, 1.4, sz], c: "#5f8a44" });
+        else out.push({ p: [is.x + is.w / 2 + sz * 0.25, -1.4, is.z + (rand() - 0.5) * is.d * 0.5], s: [1.5, 1.4, sz], c: "#5f8a44" });
+        void off;
+      }
+
       waypoints.push([is.x, is.z], [is.x + is.w * 0.25, is.z + is.d * 0.25], [is.x - is.w * 0.25, is.z - is.d * 0.25]);
     });
 
