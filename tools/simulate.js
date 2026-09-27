@@ -233,6 +233,7 @@ function runMatch(label, config, seconds, opts) {
   var thrown = null;
   var kills = 0, deaths = 0, prevKills = 0;
   var minZombieDist = Infinity;
+  var minPairDist = Infinity;
 
   for (var f = 0; f < frames; f++) {
     if (opts.autoAim) {
@@ -268,6 +269,19 @@ function runMatch(label, config, seconds, opts) {
         minZombieDist = Math.min(minZombieDist, B.dist(zz.pos.x, zz.pos.z, game.player.pos.x, game.player.pos.z));
       }
     }
+    // Distancia minima entre dos enemigos vivos: senal de que se han encontrado
+    if (f % 10 === 0) {
+      for (var ai = 0; ai < game.entities.length; ai++) {
+        var ea = game.entities[ai];
+        if (!ea.alive || ea.isPlayer) continue;
+        for (var bi2 = ai + 1; bi2 < game.entities.length; bi2++) {
+          var eb = game.entities[bi2];
+          if (!eb.alive || eb.isPlayer) continue;
+          var dd2 = B.dist(ea.pos.x, ea.pos.z, eb.pos.x, eb.pos.z);
+          if (dd2 < minPairDist) minPairDist = dd2;
+        }
+      }
+    }
     if (opts.verbose && f % (60 * 10) === 0) {
       var zs = game.entities.filter(function (e) { return e.kind === "zombie" && e.alive; });
       var minD = 1e9;
@@ -288,8 +302,8 @@ function runMatch(label, config, seconds, opts) {
     " pos=(" + player.pos.x.toFixed(1) + "," + player.pos.y.toFixed(1) + "," + player.pos.z.toFixed(1) + ")" +
     (game.finished ? " FIN" : ""));
   if (thrown) { console.log("        " + thrown.split("\n")[0]); errors.push(label + ": " + thrown); }
-  if (game.state === "playing" && !thrown && kills === 0 && minZombieDist > 4) {
-    errors.push(label + ": ni bajas ni acercamiento enemigo en " + seconds + "s");
+  if (game.state === "playing" && !thrown && kills === 0 && minZombieDist > 4 && minPairDist > 6) {
+    errors.push(label + ": ni bajas ni contacto entre enemigos en " + seconds + "s (distancia minima entre bots " + Math.round(minPairDist) + " u)");
   }
   game.teardown();
   return { game: game, thrown: thrown, kills: kills, minZombieDist: minZombieDist };
@@ -519,6 +533,39 @@ function gameplayChecks() {
   check("la dificultad facil es indulgente",
     ladder[0].t >= 5,
     ladder.map(function (l) { return l.d + " " + l.t.toFixed(1) + "s"; }).join(", ") + " (informativo; el muñeco de prueba no se cubre)");
+
+  // --- Indicador de direccion del dano ---
+  var dirCalls = 0, dirBearing = null;
+  var origDamageFrom = B.HUD.damageFrom;
+  B.HUD.damageFrom = function (b) { dirCalls++; dirBearing = b; if (origDamageFrom) origDamageFrom.call(B.HUD, b); };
+  var g9 = new B.Game();
+  g9.initRenderer(new El("canvas"));
+  g9.onFinish = function () { };
+  g9.start({ modeId: "dm", mapId: "distrito", bots: 2, difficulty: "normal", fov: 80, name: "Tu" });
+  var atacante = g9.entities.filter(function (e) { return e.isBot; })[0];
+  g9.player.invuln = 0;
+  g9.player.pos.x = 0; g9.player.pos.z = 0; g9.player.yaw = 0;
+  atacante.pos.x = 0; atacante.pos.z = -12;   // de frente (el frente es -z con yaw 0)
+  g9.dealDamage(g9.player, 10, atacante, { weapon: "RIFLE" });
+  var frenteOk = dirCalls > 0 && Math.abs(dirBearing) < 0.3;
+  dirCalls = 0;
+  atacante.pos.x = 12; atacante.pos.z = 0;    // por la derecha
+  g9.dealDamage(g9.player, 10, atacante, { weapon: "RIFLE" });
+  var derechaOk = dirCalls > 0 && (dirBearing > 0.9 && dirBearing < 2.0);
+  check("indicador de direccion del dano (frente y derecha)",
+    frenteOk && derechaOk,
+    "frente " + (frenteOk ? "ok" : "mal") + ", derecha " + (derechaOk ? "ok" : "mal"));
+
+  // --- Aviso de quien te elimino ---
+  var banners = [];
+  var origBanner = B.HUD.banner;
+  B.HUD.banner = function (t, d, s) { banners.push(String(t)); if (origBanner) origBanner.call(B.HUD, t, d, s); };
+  atacante.pos.x = 0; atacante.pos.z = -6;
+  g9.dealDamage(g9.player, 500, atacante, { weapon: "RIFLE" });
+  var avisoOk = banners.some(function (t) { return /ELIMINADO POR/i.test(t); });
+  B.HUD.banner = origBanner;
+  B.HUD.damageFrom = origDamageFrom;
+  check("aviso de quien te elimino", avisoOk, banners.join(" | ") || "sin avisos");
 
   // --- Zombis: no deben atacarse entre ellos ---
   var g5 = new B.Game();

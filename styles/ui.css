@@ -199,6 +199,16 @@ html, body {
 
 #damageVignette, #healVignette { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.25s linear; }
 
+/* ---------- Indicador de direccion del dano ---------- */
+#dmgDir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.14s linear; }
+#dmgDir.on { opacity: 1; }
+#dmgDir i {
+  position: absolute; left: -26px; top: -132px; width: 52px; height: 16px;
+  background: linear-gradient(to bottom, rgba(255, 70, 70, 0.95), rgba(255, 70, 70, 0));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  box-shadow: 0 0 10px rgba(255, 40, 40, 0.7);
+}
+
 /* ---------- Mira del francotirador ---------- */
 #hud.scoped #crosshair { display: none; }
 #scope { position: absolute; inset: 0; pointer-events: none; }
@@ -211,7 +221,7 @@ html, body {
 #scope i.h { left: 50%; top: 50%; width: 62vmin; height: 1.5px; margin-left: -31vmin; }
 #scope i.v { left: 50%; top: 50%; width: 1.5px; height: 62vmin; margin-top: -31vmin; }
 #scope b { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: var(--danger); }
-#damageVignette { box-shadow: inset 0 0 140px 30px rgba(255, 40, 40, 0.85); }
+#damageVignette { box-shadow: inset 0 0 150px 26px rgba(255, 40, 40, 0.6); }
 #healVignette { box-shadow: inset 0 0 120px 24px rgba(120, 220, 90, 0.55); }
 
 #centerMsg {

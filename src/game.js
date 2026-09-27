@@ -663,9 +663,19 @@
     victim.health -= amount;
 
     if (victim.isPlayer) {
-      B.HUD.flashDamage();
+      B.HUD.flashDamage(amount);
       B.Audio.hurt();
       this.shake = Math.max(this.shake, 0.25);
+      // Indicador de por donde te llega el dano
+      if (attacker && attacker.pos) {
+        var dxa = attacker.pos.x - victim.pos.x, dza = attacker.pos.z - victim.pos.z;
+        var la = Math.hypot(dxa, dza) || 1;
+        var fwdX = -Math.sin(victim.yaw), fwdZ = -Math.cos(victim.yaw);
+        var rightX = Math.cos(victim.yaw), rightZ = -Math.sin(victim.yaw);
+        var fpart = (dxa / la) * fwdX + (dza / la) * fwdZ;
+        var rpart = (dxa / la) * rightX + (dza / la) * rightZ;
+        B.HUD.damageFrom(Math.atan2(rpart, fpart));
+      }
     }
     if (attacker && attacker.isPlayer) {
       B.HUD.hitmark();
@@ -702,6 +712,12 @@
     var kTeam = realKiller ? realKiller.team : null;
     B.HUD.pushKill(kName, kTeam, info.weapon || "?", victim.name, victim.team,
       !!(realKiller && realKiller.isPlayer) || victim.isPlayer);
+    if (victim.isPlayer) {
+      B.HUD.banner(realKiller ? ("ELIMINADO POR " + realKiller.name) : "ELIMINADO", 2.4,
+        info.weapon ? ("con " + info.weapon) : "");
+    } else if (realKiller && realKiller.isPlayer) {
+      B.HUD.toast("ELIMINASTE A " + victim.name, 1.4);
+    }
     if (this.netHost) {
       this.netEvents.push(["kf", kName, kTeam || 0, info.weapon || "?", victim.name, victim.team || 0,
         (realKiller && realKiller.isPlayer) || victim.isPlayer ? 1 : 0]);

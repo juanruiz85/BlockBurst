@@ -210,6 +210,16 @@ Client.prototype.shot = function (file, quality) {
     await sleep(1200);
     shots.push({ name: 'captura-primera-persona.png', size: await client.shot(path.join(OUT, 'captura-primera-persona.png')) });
 
+    /* 4c. Indicador de direccion del dano (te disparan por la derecha) */
+    await client.evaluate('(function(){var g=window.BLITZ.debug.game,p=g.player;' +
+      'if(window.__keep){clearInterval(window.__keep);window.__keep=null;}' +
+      'p.alive=true;p.invuln=0;p.health=64;p.armor=50;p.thirdPerson=false;p.pitch=0;' +
+      'var b=g.entities.filter(function(e){return e.isBot&&e.alive;})[0];if(!b)return 0;' +
+      'b.pos.x=p.pos.x+10;b.pos.z=p.pos.z;b.pos.y=p.pos.y;' +
+      'g.dealDamage(p,12,b,{weapon:"RIFLE"});g.render();return 1;})()');
+    await sleep(220);
+    shots.push({ name: 'captura-dano.png', size: await client.shot(path.join(OUT, 'captura-dano.png')) });
+
     /* 4b. Katana: tajo congelado a mitad del corte (se ve el corte) */
     await client.evaluate('(function(){var g=window.BLITZ.debug.game;g.setWeapon("katana");window.BLITZ.Input.mouse=function(b){return b===0;};var p=g.player;if(!window.__keep){window.__keep=setInterval(function(){p.alive=true;p.invuln=99999;p.health=100;},200);}p.thirdPerson=false;return 1;})()');
     await sleep(1200);

@@ -1,5 +1,18 @@
 # Historial de cambios
 
+## v0.6.0 - Informacion de combate en pantalla
+
+- **Indicador de direccion del dano**: cuando te disparan, aparece una cuña roja en el borde
+  de la pantalla apuntando hacia quien te ha dado, asi que ya no te matan "de la nada".
+- **Aviso de quien te elimino**: al caer, aparece en el centro "ELIMINADO POR <nombre>" con el
+  arma usada. Si el que cae es un bot al que has matado tu, sale un aviso breve al contrario.
+- **Vinetas de dano proporcional**: el destello rojo ya no tapa la pantalla. Escala con el dano
+  recibido (un roce es un aviso suave) y se desvanece antes.
+- Regresion de multijugador repetida con **tres navegadores reales**: crear sala, unirse dos
+  invitados, dificultad aplicada y cierre automatico al vaciarse. **0 fallos**.
+- Las mediciones de simulacion cubren ahora el indicador de direccion (frente y derecha) y el
+  aviso de quien te elimino.
+
 ## v0.5.5 - Las islas ganan volumen
 
 - **Raiz de roca colgando**: cada isla lleva ahora cuatro capas de roca decrecientes por

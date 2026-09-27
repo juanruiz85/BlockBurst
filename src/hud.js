@@ -6,7 +6,7 @@
   var el = {};
   var mm = null, mmx = null;
   var feedItems = [];
-  var bannerTimer = 0, toastTimer = 0, hitTimer = 0, dmgTimer = 0, healTimer = 0;
+  var bannerTimer = 0, toastTimer = 0, hitTimer = 0, dmgTimer = 0, healTimer = 0, dirTimer = 0;
 
   function $(id) { return document.getElementById(id); }
 
@@ -16,7 +16,7 @@
         "healthNum", "healthFill", "armorNum", "armorFill", "weaponName", "ammoMag", "ammoReserve",
         "weaponSlots", "crosshair", "hitmarker", "damageVignette", "healVignette", "centerMsg",
         "pickupToast", "respawnBox", "respawnTime", "btnRespawn", "respawnHint",
-        "scoreboard", "sbTitle", "sbBody", "netStatus", "scope"].forEach(function (id) { el[id] = $(id); });
+        "scoreboard", "sbTitle", "sbBody", "netStatus", "scope", "dmgDir"].forEach(function (id) { el[id] = $(id); });
       mm = el.minimap;
       mmx = mm.getContext("2d");
     },
@@ -42,6 +42,15 @@
       el.hud.classList.toggle("scoped", on);
     },
 
+    /* Avisa de por donde te llega el dano (0 = de frente, 90 = por la derecha) */
+    damageFrom: function (bearing) {
+      if (!el.dmgDir) return;
+      var deg = (bearing * 180) / Math.PI;
+      el.dmgDir.style.transform = "rotate(" + deg.toFixed(1) + "deg)";
+      el.dmgDir.classList.add("on");
+      dirTimer = 1.1;
+    },
+
     banner: function (text, dur, sub) {
       el.centerMsg.innerHTML = "<b>" + B.esc(text) + "</b>" + (sub ? "<i>" + B.esc(sub) + "</i>" : "");
       el.centerMsg.classList.add("on");
@@ -63,7 +72,12 @@
       void kill;
     },
 
-    flashDamage: function () { el.damageVignette.style.opacity = "0.95"; dmgTimer = 0.5; },
+    /* La vinetas escala con el dano recibido, para que un roce no tape la pantalla */
+    flashDamage: function (amount) {
+      var v = B.clamp(0.22 + (amount || 10) / 75, 0.22, 0.75);
+      el.damageVignette.style.opacity = String(v);
+      dmgTimer = 0.4;
+    },
     flashHeal: function () { el.healVignette.style.opacity = "0.9"; healTimer = 0.5; },
 
     pushKill: function (killerName, killerTeam, weaponName, victimName, victimTeam, isMe) {
@@ -137,6 +151,7 @@
       if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) el.pickupToast.classList.remove("on"); }
       if (hitTimer > 0) { hitTimer -= dt; if (hitTimer <= 0) { el.hitmarker.classList.remove("on"); el.crosshair.classList.remove("hit"); } }
       if (dmgTimer > 0) { dmgTimer -= dt; if (dmgTimer <= 0) el.damageVignette.style.opacity = "0"; }
+      if (dirTimer > 0) { dirTimer -= dt; if (dirTimer <= 0) el.dmgDir.classList.remove("on"); }
       if (healTimer > 0) { healTimer -= dt; if (healTimer <= 0) el.healVignette.style.opacity = "0"; }
 
       for (var i = feedItems.length - 1; i >= 0; i--) {
